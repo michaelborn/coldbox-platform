@@ -362,15 +362,12 @@ component {
 						}
 
 						var getEntityMap = function(){
-							try {
-								// older, deprecated syntax for pre-Hibernate5
-								return structKeyArray( ormGetSessionFactory().getAllClassMetadata() );
-							} catch( any e ){
-								if ( ! listContains( e.message, "getAllClassMetadata is no longer supported" ) ){
-									rethrow;
-								}
+							if( listFirst( variables.util.getHibernateVersion(), "." ) >= 5 ){
 								// Double array functions to convert from native java to cf java
 								return arrayToList( ormGetSessionFactory().getMetaModel().getAllEntityNames() ).listToArray();
+							} else {
+								// Hibernate v4 and older
+								return structKeyArray( ormGetSessionFactory().getAllClassMetadata() );
 							}
 						};
 
