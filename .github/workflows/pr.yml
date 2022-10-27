@@ -3,6 +3,8 @@
 # AND, it checks out the untrusted PR in order to format it.
 # It is imperative that this workflow only run passive code checks and formats.
 # Any execution of the PR code can potentially access the github api for this repo, send secrets to a pastebin, etc.
+# 
+# See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/ for more info.
 ###
 name: Pull Requests
 
