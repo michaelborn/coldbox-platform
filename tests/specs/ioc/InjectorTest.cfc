@@ -9,10 +9,13 @@
 		injector = createMock( "coldbox.system.ioc.Injector" );
 
 		// init injector
-		injector.init();
+		injector.init( { scopeRegistration : { enabled : false } } );
 
-		mockLogger = createStub().$( "canDebug", false ).$( "error" );
-		util       = createMock( "coldbox.system.core.util.Util" )
+		mockLogger = createStub()
+			.$( "canDebug", false )
+			.$( "canError", true )
+			.$( "error" );
+		util = createMock( "coldbox.system.core.util.Util" )
 			.$( "getInheritedMetaData" )
 			.$results( { path : "path.to.object" } );
 		injector.setUtility( util );
@@ -40,7 +43,6 @@
 		injector.shutdown();
 
 		assertTrue( eventManager.$times( 2, "announce" ) );
-		assertTrue( parent.$once( "shutdown" ) );
 		assertTrue( injector.$once( "removeFromScope" ) );
 		assertTrue( cacheBox.$once( "shutdown" ) );
 	}
@@ -115,7 +117,7 @@
 			injector.registerListeners();
 		} catch ( "Injector.ListenerCreationException" e ) {
 		} catch ( Any e ) {
-			fail( e );
+			fail( e.getMessage() );
 		}
 	}
 
@@ -188,7 +190,7 @@
 
 	function testGetObjectPopulator(){
 		pop = injector.getObjectPopulator();
-		assertTrue( isInstanceOf( pop, "coldbox.system.core.dynamic.BeanPopulator" ) );
+		assertTrue( isInstanceOf( pop, "coldbox.system.core.dynamic.ObjectPopulator" ) );
 	}
 
 	function testParenInjector(){
@@ -230,7 +232,7 @@
 	function testChildInjectorRegistrationAndExistance(){
 		expect( injector.hasChildInjector( "bogus" ) ).toBeFalse( "Bogus injector not registered" );
 
-		var child = new coldbox.system.ioc.Injector();
+		var child = new coldbox.system.ioc.Injector( { scopeRegistration : { enabled : false } } );
 		injector.registerChildInjector( "alexia", child );
 
 		expect( child.getParent() ).toBe( injector );
@@ -238,7 +240,7 @@
 	}
 
 	function testGetChildInjector(){
-		var child = new coldbox.system.ioc.Injector();
+		var child = new coldbox.system.ioc.Injector( { scopeRegistration : { enabled : false } } );
 		injector.registerChildInjector( "alexia", child );
 
 		expect( injector.getChildInjector( "alexia" ) ).toBe( child );
@@ -251,7 +253,9 @@
 	}
 
 	function testRemoveChildInjector(){
-		var child = prepareMock( new coldbox.system.ioc.Injector() ).$( "shutdown" );
+		var child = prepareMock( new coldbox.system.ioc.Injector( { scopeRegistration : { enabled : false } } ) ).$(
+			"shutdown"
+		);
 		injector.registerChildInjector( "alexia", child ).$( "shutdown" );
 		expect( injector.getChildInjector( "alexia" ) ).toBe( child );
 		expect( injector.removeChildInjector( "alexia" ) ).toBeTrue();

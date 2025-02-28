@@ -1,0 +1,18 @@
+{
+    "app":{
+        "cfengine":"adobe@2023"
+    },
+    "name":"beload-acf2023",
+    "JVM":{
+        "heapSize":"512"
+    },
+    "web":{
+        "rewrites":{
+            "enable":"false"
+        },
+        "http":{
+            "port":"8701"
+        }
+    },
+    "openbrowser":false
+}

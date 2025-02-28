@@ -86,6 +86,10 @@ component serializable="false" accessors="true" {
 	 */
 	property name="asyncManager";
 
+	// BoxLang Detection
+	variables.IS_BOXLANG = server.keyExists( "boxlang" );
+	variables.IS_CLI     = variables.IS_BOXLANG && server.boxlang.cliMode ? true : false;
+
 	/**
 	 * Constructor
 	 *
@@ -115,7 +119,7 @@ component serializable="false" accessors="true" {
 		if ( NOT reFind( "(/|\\)$", arguments.appRootPath ) ) {
 			arguments.appRootPath = appRootPath & "/";
 		}
-		variables.appHash         = hash( arguments.appRootPath );
+		variables.appHash         = hash( arguments.appRootPath & variables.appName );
 		variables.appRootPath     = arguments.appRootPath;
 		// The App Settings
 		variables.configSettings  = {};
@@ -329,6 +333,75 @@ component serializable="false" accessors="true" {
 		return this;
 	}
 
+	/**
+	 * Get a module's settings structure or a specific setting if the setting key is passed
+	 *
+	 * @module       The module to retrieve the configuration settings from
+	 * @setting      The setting to retrieve if passed
+	 * @defaultValue The default value to return if setting does not exist
+	 *
+	 * @return struct or any
+	 */
+	any function getModuleSettings( required module, setting, defaultValue ) cbMethod{
+		var moduleSettings = getModuleConfig( arguments.module ).settings;
+		// return specific setting?
+		if ( !isNull( arguments.setting ) ) {
+			return (
+				structKeyExists( moduleSettings, arguments.setting ) ? moduleSettings[ arguments.setting ] : arguments.defaultValue
+			);
+		}
+		return moduleSettings;
+	}
+
+	/**
+	 * Get a module's configuration structure
+	 *
+	 * @module The module to retrieve the configuration structure from
+	 *
+	 * @return The struct requested
+	 *
+	 * @throws InvalidModuleException - The module passed is invalid
+	 */
+	struct function getModuleConfig( required module ){
+		var mConfig = getSetting( "modules" );
+		if ( structKeyExists( mConfig, arguments.module ) ) {
+			return mConfig[ arguments.module ];
+		}
+		throw(
+			message = "The module you passed #arguments.module# is invalid.",
+			detail  = "The loaded modules are #structKeyList( mConfig )#",
+			type    = "InvalidModuleException"
+		);
+	}
+
+	/**
+	 * Determine if the application is in the `debugMode` or not
+	 */
+	boolean function inDebugMode(){
+		return getSetting( "debugMode", false );
+	}
+
+	/**
+	 * Determine if the application is in the `development|local` environment
+	 */
+	boolean function isDevelopment(){
+		return listFindNoCase( "development,local", getSetting( "environment", "production" ) );
+	}
+
+	/**
+	 * Determine if the application is in the `production` environment
+	 */
+	boolean function isProduction(){
+		return getSetting( "environment", "production" ) == "production";
+	}
+
+	/**
+	 * Determine if the application is in the `testing` environment or in a testing.MockController execution
+	 */
+	boolean function isTesting(){
+		return getSetting( "environment", "production" ) == "testing" || isInstanceOf( this, "MockController" );
+	}
+
 	/****************************************************************
 	 * Deprecated Methods *
 	 ****************************************************************/
@@ -346,7 +419,7 @@ component serializable="false" accessors="true" {
 	 * @persist           What request collection keys to persist in flash RAM automatically for you
 	 * @persistStruct     A structure of key-value pairs to persist in flash RAM automatically for you
 	 * @ssl               Whether to relocate in SSL or not. You need to explicitly say TRUE or FALSE if going out from SSL. If none passed, we look at the even's SES base URL (if in SES mode)
-	 * @baseURL           Use this baseURL instead of the index.cfm that is used by default. You can use this for SSL or any full base url you would like to use. Ex: https://mysite.com/index.cfm
+	 * @baseURL           Use this baseURL instead of the index that is used by default. You can use this for SSL or any full base url you would like to use. Ex: https://mysite.com/index.cfm/bxm
 	 * @postProcessExempt Do not fire the postProcess interceptors, by default it does
 	 * @URL               The full URL you would like to relocate to instead of an event: ex: URL='http://www.google.com'
 	 * @URI               The relative URI you would like to relocate to instead of an event: ex: URI='/mypath/awesome/here'
@@ -372,7 +445,7 @@ component serializable="false" accessors="true" {
 			arguments.statusCode = 302;
 		}
 		// Determine the type of relocation
-		var relocationType  = "EVENT";
+		var relocationType  = "SES";
 		var relocationURL   = "";
 		var eventName       = variables.configSettings[ "EventName" ];
 		var frontController = listLast( CGI.SCRIPT_NAME, "/" );
@@ -380,13 +453,10 @@ component serializable="false" accessors="true" {
 		var routeString     = 0;
 
 		// Determine relocation type
-		if ( oRequestContext.isSES() ) {
-			relocationType = "SES";
-		}
-		if ( structKeyExists( arguments, "URL" ) ) {
+		if ( !isNull( arguments.url ) && len( arguments.url ) ) {
 			relocationType = "URL";
 		}
-		if ( structKeyExists( arguments, "URI" ) ) {
+		if ( !isNull( arguments.URI ) && len( arguments.URI ) ) {
 			relocationType = "URI";
 		}
 
@@ -394,6 +464,7 @@ component serializable="false" accessors="true" {
 		if ( len( trim( arguments.event ) ) eq 0 ) {
 			arguments.event = getSetting( "DefaultEvent" );
 		}
+
 		// Query String Struct to String
 		if ( isStruct( arguments.queryString ) ) {
 			arguments.queryString = arguments.queryString
@@ -403,6 +474,7 @@ component serializable="false" accessors="true" {
 				}, [] )
 				.toList( "&" );
 		}
+
 		// Overriding Front Controller via baseURL argument
 		if ( len( trim( arguments.baseURL ) ) ) {
 			frontController = arguments.baseURL;
@@ -414,7 +486,7 @@ component serializable="false" accessors="true" {
 			case "URL": {
 				relocationURL = arguments.URL;
 				// Check SSL?
-				if ( structKeyExists( arguments, "ssl" ) ) {
+				if ( !isNull( arguments.ssl ) ) {
 					relocationURL = updateSSL( relocationURL, arguments.ssl );
 				}
 				// Query String?
@@ -435,7 +507,7 @@ component serializable="false" accessors="true" {
 			}
 
 			// Default event relocations
-			case "SES": {
+			default: {
 				// Convert module into proper entry point
 				if ( listLen( arguments.event, ":" ) > 1 ) {
 					var mConfig = getSetting( "modules" );
@@ -472,7 +544,7 @@ component serializable="false" accessors="true" {
 					relocationURL = relocationURL & "/";
 				}
 				// Check SSL?
-				if ( structKeyExists( arguments, "ssl" ) ) {
+				if ( !isNull( arguments.ssl ) ) {
 					relocationURL = updateSSL( relocationURL, arguments.ssl );
 				}
 
@@ -480,18 +552,6 @@ component serializable="false" accessors="true" {
 				relocationURL = relocationURL & routeString;
 
 				break;
-			}
-			default: {
-				// Basic URL Relocation
-				relocationURL = "#frontController#?#eventName#=#arguments.event#";
-				// Check SSL?
-				if ( structKeyExists( arguments, "ssl" ) ) {
-					relocationURL = updateSSL( relocationURL, arguments.ssl );
-				}
-				// Query String?
-				if ( len( trim( arguments.queryString ) ) ) {
-					relocationURL = relocationURL & "&#arguments.queryString#";
-				}
 			}
 		}
 
@@ -548,31 +608,17 @@ component serializable="false" accessors="true" {
 		cacheProvider          = "template",
 		boolean prePostExempt  = false
 	){
-		// Get routing service and default routes
-		var router       = getWirebox().getInstance( "router@coldbox" );
-		var targetRoutes = router.getRoutes();
-		var targetModule = "";
-
 		// Module Route?
+		var targetModule = "";
 		if ( find( "@", arguments.name ) ) {
-			targetModule   = getToken( arguments.name, 2, "@" );
-			targetRoutes   = router.getModuleRoutes( targetModule );
-			arguments.name = getToken( arguments.name, 1, "@" );
+			targetModule = getToken( arguments.name, 2, "@" );
 		}
 		if ( find( ":", arguments.name ) ) {
-			targetModule   = getToken( arguments.name, 1, ":" );
-			targetRoutes   = router.getModuleRoutes( targetModule );
-			arguments.name = getToken( arguments.name, 2, ":" );
+			targetModule = getToken( arguments.name, 1, ":" );
 		}
 
 		// Find the named route
-		var foundRoute = targetRoutes
-			.filter( function( item ){
-				return ( arguments.item.name == name ? true : false );
-			} )
-			.reduce( function( results, item ){
-				return item;
-			}, {} );
+		var foundRoute = getWirebox().getInstance( "router@coldbox" ).findRouteByName( arguments.name );
 
 		// Did we find it?
 		if ( !foundRoute.isEmpty() ) {
@@ -680,7 +726,7 @@ component serializable="false" accessors="true" {
 				local.results.data = local.results.data.$renderdata();
 			}
 			// Check if request context and ignore
-			else if ( isInstanceOf( local.results.data, "coldbox.system.web.context.RequestContext" ) ) {
+			else if ( structKeyExists( local.results.data, "cbRequestContext" ) ) {
 				local.results.delete( "data" );
 			}
 		}
@@ -753,7 +799,10 @@ component serializable="false" accessors="true" {
 		// Setup interception data
 		var iData = {
 			"processedEvent" : arguments.event,
-			"eventArguments" : arguments.eventArguments
+			"eventArguments" : arguments.eventArguments,
+			"data"           : "",
+			"ehBean"         : "",
+			"handler"        : ""
 		};
 
 		// Reset Invalid Event if default, just in case listeners used metadata
@@ -993,6 +1042,8 @@ component serializable="false" accessors="true" {
 				}
 
 				// Execute postEvent interceptor
+				iData.handler = oHandler;
+				iData.append( results );
 				services.interceptorService.announce( "postEvent", iData );
 			}
 			// end if prePostExempt
@@ -1142,13 +1193,16 @@ component serializable="false" accessors="true" {
 	/**
 	 * Internal helper to flash persist elements
 	 *
+	 * @persist       What request collection keys to persist in flash RAM automatically for you
+	 * @persistStruct A structure of key-value pairs to persist in flash RAM automatically for you
+	 *
 	 * @return Controller
 	 */
 	private function persistVariables( persist = "", struct persistStruct = {} ){
 		var flash = getRequestService().getFlashScope();
 
 		// persist persistStruct if passed
-		if ( structKeyExists( arguments, "persistStruct" ) ) {
+		if ( !isNull( arguments.persistStruct ) ) {
 			flash.putAll( map = arguments.persistStruct, saveNow = true );
 		}
 

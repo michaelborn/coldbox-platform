@@ -308,7 +308,7 @@ component accessors="true" {
 	Future function exceptionally( required target ){
 		variables.native = variables.native.exceptionally(
 			createDynamicProxy(
-				new coldbox.system.async.proxies.Function(
+				new coldbox.system.async.cbproxies.models.Function(
 					arguments.target,
 					variables.debug,
 					variables.loadAppContext
@@ -344,7 +344,7 @@ component accessors="true" {
 		any executor = variables.executor
 	){
 		var jSupplier = createDynamicProxy(
-			new coldbox.system.async.proxies.Supplier(
+			new coldbox.system.async.cbproxies.models.Supplier(
 				arguments.supplier,
 				arguments.method,
 				variables.debug,
@@ -412,7 +412,7 @@ component accessors="true" {
 	 */
 	Future function handle( required action ){
 		var biFunction = createDynamicProxy(
-			new coldbox.system.async.proxies.BiFunction(
+			new coldbox.system.async.cbproxies.models.BiFunction(
 				arguments.action,
 				variables.debug,
 				variables.loadAppContext
@@ -450,7 +450,7 @@ component accessors="true" {
 	 */
 	Future function handleAsync( required action, executor ){
 		var biFunction = createDynamicProxy(
-			new coldbox.system.async.proxies.BiFunction(
+			new coldbox.system.async.cbproxies.models.BiFunction(
 				arguments.action,
 				variables.debug,
 				variables.loadAppContext
@@ -487,7 +487,7 @@ component accessors="true" {
 	 */
 	Future function whenComplete( required action ){
 		var biConsumer = createDynamicProxy(
-			new coldbox.system.async.proxies.BiConsumer(
+			new coldbox.system.async.cbproxies.models.BiConsumer(
 				arguments.action,
 				variables.debug,
 				variables.loadAppContext
@@ -524,7 +524,7 @@ component accessors="true" {
 	 */
 	Future function whenCompleteAsync( required action, executor ){
 		var biConsumer = createDynamicProxy(
-			new coldbox.system.async.proxies.BiConsumer(
+			new coldbox.system.async.cbproxies.models.BiConsumer(
 				arguments.action,
 				variables.debug,
 				variables.loadAppContext
@@ -561,7 +561,7 @@ component accessors="true" {
 	 */
 	Future function then( required target ){
 		var apply = createDynamicProxy(
-			new coldbox.system.async.proxies.Function(
+			new coldbox.system.async.cbproxies.models.Function(
 				arguments.target,
 				variables.debug,
 				variables.loadAppContext
@@ -608,7 +608,7 @@ component accessors="true" {
 	 */
 	Future function thenAsync( required target, executor ){
 		var apply = createDynamicProxy(
-			new coldbox.system.async.proxies.Function(
+			new coldbox.system.async.cbproxies.models.Function(
 				arguments.target,
 				variables.debug,
 				variables.loadAppContext
@@ -651,7 +651,7 @@ component accessors="true" {
 	 */
 	Future function thenRun( required target ){
 		var fConsumer = createDynamicProxy(
-			new coldbox.system.async.proxies.Consumer(
+			new coldbox.system.async.cbproxies.models.Consumer(
 				arguments.target,
 				variables.debug,
 				variables.loadAppContext
@@ -693,7 +693,7 @@ component accessors="true" {
 	 */
 	Future function thenRunAsync( required target, executor ){
 		var fConsumer = createDynamicProxy(
-			new coldbox.system.async.proxies.Consumer(
+			new coldbox.system.async.cbproxies.models.Consumer(
 				arguments.target,
 				variables.debug,
 				variables.loadAppContext
@@ -731,7 +731,7 @@ component accessors="true" {
 	Future function thenCompose( required fn ){
 		variables.native = variables.native.thenCompose(
 			createDynamicProxy(
-				new coldbox.system.async.proxies.FutureFunction(
+				new coldbox.system.async.cbproxies.models.FutureFunction(
 					arguments.fn,
 					variables.debug,
 					variables.loadAppContext
@@ -753,7 +753,7 @@ component accessors="true" {
 		variables.native = variables.native.thenCombine(
 			arguments.future.getNative(),
 			createDynamicProxy(
-				new coldbox.system.async.proxies.BiFunction(
+				new coldbox.system.async.cbproxies.models.BiFunction(
 					arguments.fn,
 					variables.debug,
 					variables.loadAppContext
@@ -806,17 +806,25 @@ component accessors="true" {
 	 * allApply( data, ( item ) => item.key & item.value.toString() )
 	 * </pre>
 	 *
-	 * @items    An array or struct to process in parallel
-	 * @fn       The function that will be applied to each of the collection's items
-	 * @executor The custom executor to use if passed, else the forkJoin Pool
-	 * @timeout  The timeout to use when waiting for each item to be processed
-	 * @timeUnit The time unit to use, available units are: days, hours, microseconds, milliseconds, minutes, nanoseconds, and seconds. The default is milliseconds
+	 * @items        An array or struct to process in parallel
+	 * @fn           The function that will be applied to each of the collection's items
+	 * @executor     The custom executor to use if passed, else the forkJoin Pool
+	 * @timeout      The timeout to use when waiting for each item to be processed
+	 * @timeUnit     The time unit to use, available units are: days, hours, microseconds, milliseconds, minutes, nanoseconds, and seconds. The default is milliseconds
+	 * @errorHandler The error handler to use if any of the items fail to process: Closure or UDF
 	 *
 	 * @return An array or struct with the items processed in parallel
 	 *
 	 * @throws UnsupportedCollectionException - When something other than an array or struct is passed as items
 	 */
-	any function allApply( items, fn, executor, timeout, timeUnit ){
+	any function allApply(
+		items,
+		fn,
+		executor,
+		timeout,
+		timeUnit,
+		errorHandler
+	){
 		var incomingExecutor = arguments.executor ?: "";
 		// Boolean indicator to avoid `isObject()` calls on iterations
 		var usingExecutor    = isObject( incomingExecutor );
@@ -826,7 +834,7 @@ component accessors="true" {
 
 		// Create the function proxy once instead of many times during iterations
 		var jApply = createDynamicProxy(
-			new coldbox.system.async.proxies.Function(
+			new coldbox.system.async.cbproxies.models.Function(
 				arguments.fn,
 				variables.debug,
 				variables.loadAppContext
@@ -842,6 +850,11 @@ component accessors="true" {
 				.map( function( thisItem ){
 					// Create a new completed future
 					var f = new Future( arguments.thisItem );
+
+					// Error Handler?
+					if ( !isNull( errorHandler ) ) {
+						f = f.onException( errorHandler );
+					}
 
 					// Execute it on a custom executor or core
 					if ( usingExecutor ) {

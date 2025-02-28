@@ -1,4 +1,5 @@
 /**
+/**
  * Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
  * www.ortussolutions.com
  * ---
@@ -78,22 +79,16 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 	 */
 	private function loadRouter(){
 		// Declare types of routers to discover
-		var legacyRouter = "config/Routes.cfm"; // TODO: Decpreated, remove by ColdBox 7
 		var modernRouter = "config.Router";
 		var baseRouter   = "coldbox.system.web.routing.Router";
 
-		// Modern Router?
-		var configFilePath = variables.routingAppMapping & modernRouter.replace( ".", "/", "all" ) & ".cfc";
-		var routerType     = "modern";
-		if ( !fileExists( expandPath( configFilePath ) ) ) {
-			// Legacy Router?
-			configFilePath = variables.routingAppMapping & legacyRouter;
-			routerType     = "legacy";
-			if ( !fileExists( expandPath( configFilePath ) ) ) {
-				// Base Router?
-				routerType = "base";
-			}
-		}
+		// Discover router: app or base
+		var configFilePath = variables.routingAppMapping & modernRouter.replace( ".", "/", "all" );
+		var routerType     = (
+			fileExists( expandPath( configFilePath & ".cfc" ) ) || fileExists(
+				expandPath( configFilePath & ".bx" )
+			)
+		) ? "modern" : "base";
 
 		// Check if base router mapped?
 		if ( NOT wirebox.getBinder().mappingExists( baseRouter ) ) {
@@ -114,8 +109,7 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 					.registerNewInstance( name = "router@coldbox", instancePath = modernRouterPath )
 					.setVirtualInheritance( baseRouter )
 					.setThreadSafe( true )
-					.setScope( wirebox.getBinder().SCOPES.SINGLETON )
-					.addDIConstructorArgument( name = "controller", value = controller );
+					.setScope( wirebox.getBinder().SCOPES.SINGLETON );
 				// Create the Router
 				variables.router = wirebox.getInstance( "router@coldbox" );
 				// Register the Router as an Interceptor as well.
@@ -124,20 +118,6 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 					.registerInterceptor( interceptorObject = variables.router );
 				// Process it
 				variables.router.configure();
-				break;
-			}
-			case "legacy": {
-				// Log it
-				variables.log.info( "Loading Legacy Router at: #legacyRouter#" );
-				// Register basic router
-				wirebox
-					.registerNewInstance( name = "router@coldbox", instancePath = baseRouter )
-					.setScope( wirebox.getBinder().SCOPES.SINGLETON );
-				// Process legacy Routes.cfm. Create a basic Router
-				variables.router = wirebox
-					.getInstance( "router@coldbox" )
-					// Load up legacy template
-					.includeRoutes( configFilePath );
 				break;
 			}
 			default: {
@@ -176,21 +156,9 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 			return;
 		}
 
-		// Enable the routing services for the request
-		arguments.event.setSESEnabled( true );
-
 		// Activate and record the incoming URL for multi-domain hosting ONLY
 		if ( variables.router.getMultiDomainDiscovery() ) {
 			arguments.event.setSESBaseURL( variables.router.composeRoutingUrl() );
-		}
-
-		// Check for invalid URLs if in strict mode via unique URLs
-		if ( variables.router.getUniqueURLs() ) {
-			checkForInvalidURL(
-				cleanedPaths[ "pathInfo" ],
-				cleanedPaths[ "scriptName" ],
-				arguments.event
-			);
 		}
 
 		// Extension detection if enabled, so we can do cool extension formats
@@ -331,7 +299,12 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 		if ( isStruct( routeResults.route.action ) ) {
 			// Verify HTTP method used is valid
 			if ( structKeyExists( routeResults.route.action, httpMethod ) ) {
-				discoveredEvent &= ( discoveredEvent == "" ? "" : "." ) & "#routeResults.route.action[ httpMethod ]#";
+				discoveredEvent &= ( discoveredEvent == "" ? "" : "." );
+				// Do we have a module? If so, prefix it
+				if ( routeResults.route.module.len() && !discoveredEvent.findNoCase( routeResults.route.module ) ) {
+					discoveredEvent = routeResults.route.module & ":" & discoveredEvent;
+				}
+				discoveredEvent &= "#routeResults.route.action[ httpMethod ]#";
 				// Send for logging in debug mode
 				if ( variables.log.canDebug() ) {
 					variables.log.debug(
@@ -339,6 +312,10 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 					);
 				}
 			} else {
+				// Do we have a module? If so, prefix it
+				if ( routeResults.route.module.len() && !discoveredEvent.findNoCase( routeResults.route.module ) ) {
+					discoveredEvent = routeResults.route.module & ":" & discoveredEvent;
+				}
 				// Mark as invalid HTTP Exception
 				discoveredEvent &= ".onInvalidHTTPMethod";
 				arguments.event.setIsInvalidHTTPMethod( true );
@@ -349,7 +326,12 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 		}
 		// Simple value action
 		else if ( !isStruct( routeREsults.route.action ) && routeResults.route.action.len() ) {
-			discoveredEvent &= ( discoveredEvent == "" ? "" : "." ) & "#routeResults.route.action#";
+			discoveredEvent &= ( discoveredEvent == "" ? "" : "." );
+			// Do we have a module? If so, prefix it
+			if ( routeResults.route.module.len() && !discoveredEvent.findNoCase( routeResults.route.module ) ) {
+				discoveredEvent = routeResults.route.module & ":" & discoveredEvent;
+			}
+			discoveredEvent &= "#routeResults.route.action#";
 		}
 		// end if action exists
 
@@ -400,19 +382,21 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 	 * the `route` it discovered or an empty structure and the `params` structure which represents
 	 * URL placeholders, convention name value pairs, matching variables, etc.
 	 *
-	 * @action    The action evaluated by path_info
-	 * @event     The event object
-	 * @module    Incoming module
-	 * @namespace Incoming namespace
-	 * @domain    Incoming domain
-	 * @result    Struct: { route: found route or empty struct, params: translated params }
+	 * @action           The action evaluated by path_info
+	 * @event            The event object
+	 * @module           Incoming module
+	 * @namespace        Incoming namespace
+	 * @domain           Incoming domain
+	 * @excludedPatterns An array of pattern strings to exclude from possible matches
+	 * @result           Struct: { route: found route or empty struct, params: translated params }
 	 */
 	struct function findRoute(
 		required action,
 		required event,
-		module    = "",
-		namespace = "",
-		domain    = ""
+		module           = "",
+		namespace        = "",
+		domain           = "",
+		excludedPatterns = []
 	){
 		var requestString = arguments.action;
 		var rc            = event.getCollection();
@@ -484,6 +468,8 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 					}
 				}
 
+				if ( arrayFindNoCase( arguments.excludedPatterns, _routes[ i ].pattern ) > 0 ) continue;
+
 				// Setup the found Route: we dup to avoid reference collisions
 				results.route = duplicate( _routes[ i ] );
 
@@ -516,8 +502,9 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 		if ( len( results.route.moduleRouting ) OR len( results.route.namespaceRouting ) ) {
 			// build routing argument struct based on module/namespace context
 			var contextRouting = {
-				action : reReplaceNoCase( requestString, results.route.regexpattern, "" ),
-				event  : arguments.event
+				action           : reReplaceNoCase( requestString, results.route.regexpattern, "" ),
+				event            : arguments.event,
+				excludedPatterns : arguments.excludedPatterns
 			};
 			// add module or namespace
 			if ( len( results.route.moduleRouting ) ) {
@@ -576,9 +563,10 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 				}
 				// Return found Route recursively.
 				return findRoute(
-					action = packagedRequestString,
-					event  = arguments.event,
-					module = arguments.module
+					action           = packagedRequestString,
+					event            = arguments.event,
+					module           = arguments.module,
+					excludedPatterns = arguments.excludedPatterns
 				);
 			}
 		}
@@ -795,6 +783,7 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 		// render it out
 		event
 			.renderdata(
+				type       = isSimpleValue( theResponse ) ? "HTML" : "JSON",
 				data       = theResponse,
 				statusCode = aRoute.statusCode,
 				statusText = aRoute.statusText
@@ -909,98 +898,6 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 	}
 
 	/**
-	 * Check for invalid URL's
-	 *
-	 * @route       The incoming route
-	 * @script_name The cgi script name
-	 * @event       The event object
-	 */
-	private function checkForInvalidURL(
-		required route,
-		required script_name,
-		required event
-	){
-		var handler = "";
-		var action  = "";
-		var newpath = "";
-		var rc      = event.getCollection();
-
-		/**
-		Verify we have uniqueURLs ON, the event var exists, route is empty or index.cfm
-		AND
-		if the incoming event is not the default OR it is the default via the URL.
-		**/
-		if (
-			structKeyExists( rc, variables.eventName )
-			AND
-			( arguments.route EQ "/index.cfm" or arguments.route eq "" )
-			AND
-			(
-				rc[ variables.eventName ] NEQ variables.defaultEvent
-				OR
-				( structKeyExists( url, variables.eventName ) AND rc[ variables.eventName ] EQ variables.defaultEvent )
-			)
-		) {
-			//  New Pathing Calculations if not the default event. If default, relocate to the domain.
-			if ( rc[ variables.eventName ] != variables.defaultEvent ) {
-				//  Clean for handler & Action
-				if ( structKeyExists( rc, variables.eventName ) ) {
-					handler = reReplace( rc[ variables.eventName ], "\.[^.]*$", "" );
-					action  = listLast( rc[ variables.eventName ], "." );
-				}
-				//  route a handler
-				if ( len( handler ) ) {
-					newpath = "/" & handler;
-				}
-				//  route path with handler + action if not the default event action
-				if ( len( handler ) && len( action ) ) {
-					newpath = newpath & "/" & action;
-				}
-			}
-
-			// Debugging
-			if ( variables.log.canDebug() ) {
-				variables.log.debug(
-					"SES Invalid URL detected. Route: #arguments.route#, script_name: #arguments.script_name#"
-				);
-			}
-
-			// Setup Relocation
-			var httpRequestData = getHTTPRequestData();
-			var relocationUrl   = "#arguments.event.getSESbaseURL()##newpath##serializeURL( httpRequestData.content, arguments.event )#";
-
-			if ( httpRequestData.method eq "GET" ) {
-				cflocation( url = relocationUrl, statusCode = 301 );
-			} else {
-				cflocation( url = relocationUrl, statusCode = 303 );
-			}
-		}
-	}
-
-	/**
-	 * Serialize a URL when invalid
-	 *
-	 * @formVars The incoming form variables
-	 * @event    The event object
-	 */
-	private function serializeURL( formVars = "", required event ){
-		var vars = arguments.formVars;
-		var rc   = arguments.event.getCollection();
-
-		for ( var key in rc ) {
-			if ( NOT listFindNoCase( "route,handler,action,#variables.eventName#", key ) ) {
-				vars = listAppend( vars, "#lCase( key )#=#rc[ key ]#", "&" );
-			}
-		}
-
-		if ( len( vars ) eq 0 ) {
-			return "";
-		}
-
-		return "?" & vars;
-	}
-
-	/**
 	 * Clean up some IIS funkyness where query string is found in the path info. We basically clean it up and add the query string into the RC scope
 	 *
 	 * @requestString the incoming request string
@@ -1084,7 +981,7 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 		results[ "scriptName" ] = trim(
 			reReplaceNoCase(
 				getCGIElement( "script_name", arguments.event ),
-				"[/\\]index\.cfm",
+				"[/\\]index\.(cfm|bxm)",
 				""
 			)
 		);
@@ -1102,8 +999,12 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 			results[ "scriptName" ] = replaceNoCase( results[ "scriptName" ], getContextRoot(), "" );
 		}
 
-		// Clean up the path_info from index.cfm
-		results[ "pathInfo" ] = reReplaceNoCase( results[ "pathInfo" ], "^[/\\]index\.cfm", "" );
+		// Clean up the path_info from index
+		results[ "pathInfo" ] = reReplaceNoCase(
+			results[ "pathInfo" ],
+			"^[/\\]index\.(cfm|bxm)",
+			""
+		);
 
 		// Clean the scriptname from the pathinfo if it is the first item in case this is a nested application
 		if ( len( results[ "scriptName" ] ) ) {

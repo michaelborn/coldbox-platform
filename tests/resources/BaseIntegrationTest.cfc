@@ -24,22 +24,18 @@ component
 	// Never unload until the request dies
 	this.unloadColdBox = false;
 
+
 	/*********************************** LIFE CYCLE Methods ***********************************/
 
 	function beforeAll(){
 
 		// Cleanup
-		structDelete( request, "_lastInvalidEvent" );
+		cleanupColdBoxRequestData();
 		structDelete( url, "event" );
 		structDelete( url, "format" );
 
 		// Super size me!
 		super.beforeAll();
-
-		// Wire up the test object with dependencies
-		if( this.loadColdBox && structKeyExists( application, "wirebox" ) ){
-			application.wirebox.autowire( this );
-		}
 
 		// add custom matchers
 		addMatchers( {
@@ -64,26 +60,33 @@ component
 	 * Cleanup for invalid handler on all tests
 	 * @beforeEach
 	 */
-	function cleanupInvalidHandler(){
+	function cleanupColdBoxRequestData(){
 		structDelete( request, "_lastInvalidEvent" );
+		structDelete( request, "cbTransientDICache" )
 	}
 
 	function isAdobe(){
-		return !server.keyExists( "lucee" );
+		return server.keyExists( "coldfusion" ) && server.coldfusion.productName.findNoCase( "ColdFusion" );
 	}
 
 	function isLucee(){
 		return server.keyExists( "lucee" );
 	}
 
+	function isBoxLang(){
+		return server.keyExists( "boxlang" );
+	}
+
+	function isLucee6(){
+		return server.keyExists( "lucee" ) && left( server.lucee.version, 1 ) == 6;
+	}
+
+	function noWSDLSupport(){
+		return isAdobe() || isLucee6() || isBoxLang();
+	}
+
 	function shutdownColdBox(){
-		// Graceful shutdown
-		if ( structKeyExists( application, "cbController" ) ) {
-			application[ "cbController" ].getLoaderService().processShutdown();
-		}
-		// Wipe app scopes
-		structDelete( application, "cbController" );
-		structDelete( application, "wirebox" );
+		getColdBoxVirtualApp().shutdown();
 	}
 
 }

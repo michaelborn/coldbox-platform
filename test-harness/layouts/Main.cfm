@@ -3,11 +3,11 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8">
-	<title>#server.keyExists( "lucee" ) ? "lucee" : "adobe"# #server.coldfusion.productVersion# - Welcome to Coldbox!</title>
+	<title>#controller.getCFMLEngine().getEngine()# #controller.getCFMLEngine().getFullVersion()# - Welcome to Coldbox!</title>
 	<meta name="description" content="ColdBox Application Template">
     <meta name="author" content="Ortus Solutions, Corp">
 	<!---Base URL --->
-	<base href="#getSetting( "HTMLBaseURL" )#" />
+	<base href="#getSetting( "HTMLBaseURL", "" )#" />
 	<!---css --->
 	<link href="includes/css/bootstrap.min.css" rel="stylesheet">
 	<style>
@@ -70,7 +70,7 @@
 	</nav> <!---end navbar --->
 
 	<!---Container And Views --->
-	<div class="container">#renderView()#</div>
+	<div class="container">#view()#</div>
 
 	<footer class="footer">
 		<p class="pull-right">

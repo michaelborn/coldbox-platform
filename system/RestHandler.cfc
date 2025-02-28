@@ -1,10 +1,10 @@
 /**
- * ********************************************************************************
- * Copyright 2005-2007 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
+ * Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
  * www.ortussolutions.com
- * ********************************************************************************
- * This specialized handler is to be used for Restful applications.
- * It wraps around functions to provide consistency and an opinionated approach to RESTing!
+ * ---
+ * Base class for all RESTFul event handlers
+ *
+ * @author Luis Majano <lmajano@ortussolutions.com>
  */
 component extends="EventHandler" {
 
@@ -45,9 +45,9 @@ component extends="EventHandler" {
 			arguments.event.getResponse();
 			// prepare argument execution
 			var actionArgs = {
-				event : arguments.event,
-				rc    : arguments.rc,
-				prc   : arguments.prc
+				"event" : arguments.event,
+				"rc"    : arguments.rc,
+				"prc"   : arguments.prc
 			};
 			structAppend( actionArgs, arguments.eventArguments );
 			// Incoming Format Detection
@@ -59,10 +59,17 @@ component extends="EventHandler" {
 		}
 		// Auth Issues
 		catch ( "InvalidCredentials" e ) {
+			arguments.exception = e;
+			this.onAuthenticationFailure( argumentCollection = arguments );
+		}
+		// Auth Issues
+		catch ( "NotAuthorized" e ) {
+			arguments.exception = e;
 			this.onAuthenticationFailure( argumentCollection = arguments );
 		}
 		// Token Decoding Issues
 		catch ( "TokenInvalidException" e ) {
+			arguments.exception = e;
 			this.onAuthenticationFailure( argumentCollection = arguments );
 		}
 		// Validation Exceptions
@@ -84,17 +91,19 @@ component extends="EventHandler" {
 		catch ( "RecordNotFound" e ) {
 			arguments.exception = e;
 			this.onEntityNotFoundException( argumentCollection = arguments );
-		} catch ( Any e ) {
+		}
+		// Global Catch
+		catch ( Any e ) {
 			arguments.exception = e;
 			this.onAnyOtherException( argumentCollection = arguments );
 			// If in development, let's show the error template
-			if ( getSetting( "environment" ) eq "development" ) {
+			if ( inDebugMode() ) {
 				rethrow;
 			}
 		}
 
 		// Development additions
-		if ( getSetting( "environment" ) eq "development" ) {
+		if ( inDebugMode() ) {
 			arguments.prc.response
 				.addHeader( "x-current-route", arguments.event.getCurrentRoute() )
 				.addHeader( "x-current-routed-url", arguments.event.getCurrentRoutedURL() )
@@ -122,15 +131,14 @@ component extends="EventHandler" {
 
 			// Magical renderings
 			event.renderData(
-				type            = arguments.prc.response.getFormat(),
-				data            = responseData,
-				contentType     = arguments.prc.response.getContentType(),
-				statusCode      = arguments.prc.response.getStatusCode(),
-				statusText      = arguments.prc.response.getStatusText(),
-				location        = arguments.prc.response.getLocation(),
-				isBinary        = arguments.prc.response.getBinary(),
-				jsonCallback    = arguments.prc.response.getJsonCallback(),
-				jsonQueryFormat = arguments.prc.response.getJsonQueryFormat()
+				type         = arguments.prc.response.getFormat(),
+				data         = responseData,
+				contentType  = arguments.prc.response.getContentType(),
+				statusCode   = arguments.prc.response.getStatusCode(),
+				statusText   = arguments.prc.response.getStatusText(),
+				location     = arguments.prc.response.getLocation(),
+				isBinary     = arguments.prc.response.getBinary(),
+				jsonCallback = arguments.prc.response.getJsonCallback()
 			);
 		}
 
@@ -162,17 +170,21 @@ component extends="EventHandler" {
 		event,
 		rc,
 		prc,
-		faultAction = "",
-		exception,
+		faultAction    = "",
+		exception      = {},
 		eventArguments = {}
 	){
 		// Try to discover exception, if not, hard error
-		if ( isNull( arguments.exception ) && !isNull( arguments.prc.exception ) ) {
+		if (
+			!isNull( arguments.prc.exception ) && (
+				isNull( arguments.exception ) || structIsEmpty( arguments.exception )
+			)
+		) {
 			arguments.exception = arguments.prc.exception.getExceptionStruct();
 		}
 
 		// If in development and not in testing mode, then show exception template, easier to debug
-		if ( getSetting( "environment" ) eq "development" && !isInstanceOf( variables.controller, "MockController" ) ) {
+		if ( inDebugMode() && !isInstanceOf( variables.controller, "MockController" ) ) {
 			throw( object = arguments.exception );
 		}
 
@@ -195,7 +207,7 @@ component extends="EventHandler" {
 			.setStatusText( "General application error" );
 
 		// Development additions Great for Testing
-		if ( getSetting( "environment" ) eq "development" ) {
+		if ( inDebugMode() ) {
 			prc.response
 				.setData(
 					structKeyExists( arguments.exception, "tagContext" ) ? arguments.exception.tagContext : {}
@@ -226,14 +238,14 @@ component extends="EventHandler" {
 	 * @eventArguments The original event arguments
 	 * @exception      The thrown exception
 	 */
-	function onValidationException( event, rc, prc, eventArguments, exception ){
-		// Log Locally
-		if ( log.canDebug() ) {
-			log.debug(
-				"ValidationException Execution of (#arguments.event.getCurrentEvent()#)",
-				arguments.exception.extendedInfo ?: ""
-			);
-		}
+	function onValidationException( event, rc, prc, eventArguments, exception = {} ){
+		// Param Exceptions, just in case
+		param name="arguments.exception.message"      default="";
+		param name="arguments.exception.extendedInfo" default="";
+		// Announce exception
+		announce( "onValidationException", { "exception" : arguments.exception } );
+		// Log it
+		log.warn( "onValidationException of (#event.getCurrentEvent()#)", arguments.exception?.extendedInfo ?: "" );
 
 		// Setup Response
 		arguments.event
@@ -268,21 +280,27 @@ component extends="EventHandler" {
 	 * @eventArguments The original event arguments
 	 * @exception      The thrown exception
 	 */
-	function onEntityNotFoundException( event, rc, prc, eventArguments, exception ){
-		// Log Locally
-		if ( log.canDebug() ) {
-			log.debug(
-				"Record not found in execution of (#arguments.event.getCurrentEvent()#)",
-				arguments.exception.extendedInfo
-			);
-		}
+	function onEntityNotFoundException( event, rc, prc, eventArguments, exception = {} ){
+		// Param Exceptions, just in case
+		param name="arguments.exception.message"      default="";
+		param name="arguments.exception.extendedInfo" default="";
+
+		// Announce exception
+		announce( "onEntityNotFoundException", { "exception" : arguments.exception } );
+		// Log it
+		log.warn(
+			"onEntityNotFoundException of (#event.getCurrentEvent()#)",
+			arguments.exception?.extendedInfo ?: ""
+		);
 
 		// Setup Response
 		arguments.event
 			.getResponse()
 			.setError( true )
 			.setData( rc.id ?: "" )
-			.addMessage( "The record you requested cannot be found in this system" )
+			.addMessage(
+				len( exception.message ) ? exception.message : "The record you requested cannot be found in this system"
+			)
 			.setStatusCode( arguments.event.STATUS.NOT_FOUND )
 			.setStatusText( "Not Found" );
 
@@ -351,7 +369,7 @@ component extends="EventHandler" {
 			.getResponse()
 			.setError( true )
 			.addMessage( "Action '#arguments.missingAction#' could not be found" )
-			.setStatusCode( arguments.event.STATUS.NOT_ALLOWED )
+			.setStatusCode( arguments.event.STATUS.NOT_FOUND )
 			.setStatusText( "Invalid Action" );
 
 		// Render Error Out
@@ -372,18 +390,29 @@ component extends="EventHandler" {
 	 *
 	 * It also monitors cbsecurity convention of validator results for setting error messages into the data packet
 	 *
-	 * @event The request context
-	 * @rc    The rc reference
-	 * @prc   The prc reference
+	 * @event     The request context
+	 * @rc        The rc reference
+	 * @prc       The prc reference
+	 * @abort     Hard abort the request if passed, defaults to false
+	 * @exception The thrown exception
 	 *
-	 * @return 403
+	 * @return 401
 	 */
 	function onAuthenticationFailure(
-		event = getRequestContext(),
-		rc    = getRequestCollection(),
-		prc   = getRequestCollection( private = true ),
-		abort = false
+		event     = getRequestContext(),
+		rc        = getRequestCollection(),
+		prc       = getRequestCollection( private = true ),
+		abort     = false,
+		exception = {}
 	){
+		// Announce exception
+		announce( "onAuthenticationFailure", { "exception" : arguments.exception } );
+		// Log it
+		log.warn(
+			"onAuthenticationFailure of (#event.getCurrentEvent()#)",
+			arguments.prc?.cbSecurity_validatorResults?.messages ?: ""
+		);
+
 		// case when the a jwt token was valid, but expired
 		if (
 			!isNull( arguments.prc.cbSecurity_validatorResults ) &&
@@ -404,6 +433,22 @@ component extends="EventHandler" {
 			.setStatusCode( arguments.event.STATUS.NOT_AUTHENTICATED )
 			.setStatusText( "Invalid or Missing Credentials" )
 			.addMessage( "Invalid or Missing Authentication Credentials" );
+
+		/**
+		 * When you need a really hard stop to prevent further execution ( use as last resort )
+		 */
+		if ( arguments.abort ) {
+			event.setHTTPHeader( name = "Content-Type", value = "application/json" );
+			event.setHTTPHeader(
+				statusCode = "#arguments.event.STATUS.NOT_AUTHENTICATED#",
+				statusText = "Invalid or Missing Credentials"
+			);
+
+			writeOutput( toJson( prc.response.getDataPacket( reset = this.resetDataOnError ) ) );
+
+			flush;
+			abort;
+		}
 	}
 
 	/**
@@ -412,17 +457,27 @@ component extends="EventHandler" {
 	 *
 	 * It will check for cbsecurity validation results and set the appropriate error messages
 	 *
-	 * @event The request context
-	 * @rc    The rc reference
-	 * @prc   The prc reference
-	 * @abort Hard abort the request if passed, defaults to false
+	 * @event     The request context
+	 * @rc        The rc reference
+	 * @prc       The prc reference
+	 * @abort     Hard abort the request if passed, defaults to false
+	 * @exception The thrown exception
 	 */
 	function onAuthorizationFailure(
-		event = getRequestContext(),
-		rc    = getRequestCollection(),
-		prc   = getRequestCollection( private = true ),
-		abort = false
+		event     = getRequestContext(),
+		rc        = getRequestCollection(),
+		prc       = getRequestCollection( private = true ),
+		abort     = false,
+		exception = {}
 	){
+		// Announce exception
+		announce( "onAuthorizationFailure", { "exception" : arguments.exception } );
+		// Log it
+		log.warn(
+			"onAuthorizationFailure of (#event.getCurrentEvent()#)",
+			arguments.prc?.cbSecurity_validatorResults?.messages ?: ""
+		);
+
 		arguments.event
 			.getResponse()
 			.setError( true )
@@ -485,7 +540,20 @@ component extends="EventHandler" {
 	 * @eventArguments The original event arguments
 	 * @exception      The thrown exception
 	 */
-	function onAnyOtherException( event, rc, prc, eventArguments, exception ){
+	function onAnyOtherException( event, rc, prc, eventArguments, exception = {} ){
+		// Param due to inconsistencies with safe navigation operators in all CFML engines
+		param arguments.exception.type = "";
+
+		// Handle a convention of on{type}Exception() in your base handler
+		if (
+			len( arguments.exception.type ) && structKeyExists( this, "on#arguments.exception.type#Exception" ) && isCustomFunction(
+				this[ "on#arguments.exception.type#Exception" ]
+			)
+		) {
+			this[ "on#arguments.exception.type#Exception" ]( argumentCollection = arguments );
+			return;
+		}
+
 		// Log Exception
 		log.error(
 			"Error calling #arguments.event.getCurrentEvent()#: #arguments.exception.message# #arguments.exception.detail#",
@@ -495,10 +563,29 @@ component extends="EventHandler" {
 			}
 		);
 
+		// Announce exception
+		announce( "onException", { "exception" : arguments.exception } );
+
 		// Setup General Error Response
 		arguments.prc.response
 			.setError( true )
-			.addMessage( "General application error: #arguments.exception.message#" )
+			.setData(
+				inDebugMode() ? {
+					"environment" : {
+						"currentRoute"     : arguments.event.getCurrentRoute(),
+						"currentRoutedUrl" : arguments.event.getCurrentRoutedUrl(),
+						"currentEvent"     : arguments.event.getCurrentEvent(),
+						"timestamp"        : getIsoTime()
+					},
+					"exception" : {
+						"stack"        : arguments.exception.tagContext.map( ( item ) => item.template & ":" & item.line ),
+						"type"         : arguments.exception.type,
+						"detail"       : arguments.exception.detail,
+						"extendedInfo" : arguments.exception.extendedInfo
+					}
+				} : {}
+			)
+			.addMessage( "An exception ocurred: #arguments.exception.message#" )
 			.setStatusCode( arguments.event.STATUS.INTERNAL_ERROR )
 			.setStatusText( "General application error" );
 	}

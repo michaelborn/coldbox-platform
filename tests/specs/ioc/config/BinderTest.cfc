@@ -201,13 +201,6 @@
 		assertEquals( "java.lang.StringBuilder", mapping.getPath() );
 	}
 
-	function testToWebservice(){
-		config.map( "Test" ).toWebservice( "http://localhost:8599/test-harness/remote/Echo.cfc?wsdl" );
-		mapping = config.getMapping( "Test" );
-		assertEquals( this.TYPES.WEBSERVICE, mapping.getType() );
-		assertEquals( "http://localhost:8599/test-harness/remote/Echo.cfc?wsdl", mapping.getPath() );
-	}
-
 	function testToRSS(){
 		config.map( "Test" ).toRSS( "http://www.coldbox.org/rss" );
 		mapping = config.getMapping( "Test" );
@@ -523,7 +516,7 @@
 		config.reset();
 
 		config.mapDirectory( packagePath = "coldbox.test-harness.models", include = "ioc.*" );
-		assertTrue( structCount( config.getMappings ) gte 2 );
+		assertTrue( structCount( config.getMappings() ) gte 2 );
 
 		config.reset();
 

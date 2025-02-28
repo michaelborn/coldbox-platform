@@ -45,11 +45,13 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 
 	/**
 	 * Process a ColdBox service shutdown
+	 *
+	 * @force If true, it forces all shutdowns this is usually true when doing reinits
 	 */
-	function onShutdown(){
+	function onShutdown( boolean force = false ){
 		variables.schedulers.each( function( name, thisScheduler ){
 			variables.log.info( "† Shutting down Scheduler (#arguments.name#)..." );
-			arguments.thisScheduler.shutdown();
+			arguments.thisScheduler.shutdown( force );
 		} );
 	}
 
@@ -70,7 +72,11 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 		}
 
 		// Check if the convention exists, else just build out a simple scheduler
-		if ( fileExists( variables.appPath & "config/Scheduler.cfc" ) ) {
+		if (
+			fileExists( variables.appPath & "config/Scheduler.cfc" ) || fileExists(
+				variables.appPath & "config/Scheduler.bx"
+			)
+		) {
 			schedulerPath = (
 				variables.appMapping.len() ? "#variables.appMapping#.#appSchedulerConvention#" : appSchedulerConvention
 			);
@@ -84,35 +90,67 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 	 * Load a scheduler cfc by path and name, usually this is called from module services or ways to register
 	 * a-la-carte schedulers
 	 *
-	 * @name The name to register the scheduler with
-	 * @path The path to instantiate the scheduler cfc
+	 * @name   The name to register the scheduler with
+	 * @path   The path to instantiate the scheduler cfc
+	 * @module The name of the ColdBox module that requested the registration (empty if it's a global scheduler)
 	 *
 	 * @return The created, configured, registered, and activated scheduler
 	 */
-	function loadScheduler( required name, required path ){
+	function loadScheduler(
+		required name,
+		required path,
+		string module = ""
+	){
 		// Log it
 		variables.log.info( "Loading ColdBox Task Scheduler (#arguments.name#) at => #arguments.path#..." );
-		// Process as a Scheduler.cfc with virtual inheritance
+		// Process as a Scheduler with virtual inheritance
 		wirebox
 			.registerNewInstance( name = arguments.name, instancePath = arguments.path )
 			.setVirtualInheritance( variables.baseScheduler )
 			.setThreadSafe( true )
 			.setScope( variables.wirebox.getBinder().SCOPES.SINGLETON )
 			.addDIConstructorArgument( name = "name", value = arguments.name );
+
 		// Create, register, configure it and start it up baby!
 		var oScheduler = registerScheduler(
 			variables.wirebox.getInstance( arguments.name, { name : arguments.name } ).setName( arguments.name )
 		);
+
+		// Reconfigure the Logger Category due to virtual inheritance
+		oScheduler.getLog().setCategory( arguments.path );
+
 		// Register the Scheduler as an Interceptor as well.
 		variables.controller.getInterceptorService().registerInterceptor( interceptorObject = oScheduler );
+
+		// Inject useful global properties
+		var envUtil = wirebox.getInstance( "Env@coreDelegates" );
+		oScheduler
+			.injectPropertyMixin( "coldboxVersion", variables.controller.getColdBoxSettings().version )
+			.injectPropertyMixin( "appMapping", variables.controller.getSetting( "appMapping" ) )
+			.injectPropertyMixin( "getJavaSystem", envUtil.getJavaSystem )
+			.injectPropertyMixin( "getSystemSetting", envUtil.getSystemSetting )
+			.injectPropertyMixin( "getSystemProperty", envUtil.getSystemProperty )
+			.injectPropertyMixin( "getEnv", envUtil.getEnv );
+
+		// Is this a module scheduler?
+		if ( len( arguments.module ) ) {
+			var moduleConfig = variables.controller.getConfigSettings().modules[ arguments.module ];
+			// Inject useful module data
+			oScheduler
+				.injectPropertyMixin( "moduleMapping", moduleConfig.mapping )
+				.injectPropertyMixin( "modulePath", moduleConfig.path )
+				.injectPropertyMixin( "moduleSettings", moduleConfig.settings );
+		}
+
 		// Configure it
 		oScheduler.configure();
+
 		// Return it
 		return oScheduler;
 	}
 
 	/**
-	 * This method is ran by the laoder service once the ColdBox application is ready to serve requests.
+	 * This method is ran by the loader service once the ColdBox application is ready to serve requests.
 	 * It will startup all the schedulers in the order they where registered.
 	 */
 	SchedulerService function startupSchedulers(){
@@ -156,6 +194,29 @@ component extends="coldbox.system.web.services.BaseService" accessors="true" {
 		if ( hasScheduler( arguments.name ) ) {
 			variables.schedulers[ arguments.name ].shutdown();
 			structDelete( variables.schedulers, arguments.name );
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Restarts a scheduler from this manager, if it exists.
+	 *
+	 * @name    The name of the scheduler
+	 * @force   If true, it forces all shutdowns this is usually true when doing reinits
+	 * @timeout The timeout in seconds to wait for the shutdown of all tasks, defaults to the scheduler's shutdown timeout
+	 *
+	 * @return True if restarted, false if not found
+	 */
+	boolean function restartScheduler(
+		required name,
+		boolean force = false,
+		numeric timeout
+	){
+		if ( hasScheduler( arguments.name ) ) {
+			var scheduler = variables.scheduler[ arguments.name ];
+			structDelete( arguments, "name" );
+			scheduler.restart( argumentCollection = arguments );
 			return true;
 		}
 		return false;

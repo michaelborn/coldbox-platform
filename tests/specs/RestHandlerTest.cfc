@@ -16,7 +16,7 @@ component extends="coldbox.system.testing.BaseModelTest" {
 		// all your suites go here.
 		describe( "Response Object", function(){
 			beforeEach( function( currentSpec ){
-				handler            = createMock( "coldbox.system.RestHandler" );
+				handler            = createMock( "coldbox.system.RestHandler" ).$( "announce" ).$( "announceInterception" );
 				mockController     = createMock( "coldbox.system.web.Controller" );
 				flashScope         = createEmptyMock( "coldbox.system.web.flash.MockFlash" );
 				mockRequestContext = createMock( "coldbox.system.web.context.RequestContext" ).init(
@@ -40,21 +40,30 @@ component extends="coldbox.system.testing.BaseModelTest" {
 				mockCacheBox = createEmptyMock( "coldbox.system.cache.CacheFactory" );
 				mockWireBox  = createEmptyMock( "coldbox.system.ioc.Injector" );
 
-				mockController.$( "getRequestService", mockRS );
-
-				mockController.setLogBox( mockLogBox );
-				mockController.setWireBox( mockWireBox );
-				mockController.setCacheBox( mockCacheBox );
-
 				mockController
+					.$( "getRequestService", mockRS )
+					.setLogBox( mockLogBox )
+					.setWireBox( mockWireBox )
+					.setCacheBox( mockCacheBox )
 					.$( "getSetting" )
 					.$args( "applicationHelper" )
 					.$results( [] )
 					.$( "getSetting" )
 					.$args( "AppMapping" )
-					.$results( "/coldbox/testing" );
+					.$results( "/coldbox/testing" )
+					.$( "getSetting" )
+					.$args( "debugMode", false )
+					.$results( false );
 
-				handler.init( mockController );
+				handler
+					.init()
+					.setCacheBox( mockCacheBox )
+					.setController( mockController )
+					.setFlash( flashScope )
+					.setLogBox( mockLogBox )
+					.setLog( mockLogger )
+					.setWireBox( mockWirebox );
+				handler.onHandlerDIComplete();
 			} );
 
 			it( "can be created", function(){
@@ -151,7 +160,7 @@ component extends="coldbox.system.testing.BaseModelTest" {
 				var response = mockRequestContext.getResponse();
 				expect( response.getError() ).toBeTrue();
 				expect( response.getStatusText() ).toBe( "Invalid Action" );
-				expect( response.getStatusCode() ).toBe( 405 );
+				expect( response.getStatusCode() ).toBe( 404 );
 			} );
 
 			it( "can handle onInvalidHTTPMethod", function(){
@@ -196,6 +205,10 @@ component extends="coldbox.system.testing.BaseModelTest" {
 			} );
 
 			it( "can handle onError", function(){
+				handler
+					.$( "getSetting" )
+					.$args( "environment" )
+					.$results( "production" );
 				handler.onError(
 					mockRequestContext,
 					mockRequestContext.getCollection(),

@@ -149,7 +149,7 @@
 		this.state.register( this.key, mockInterceptor, mockMetadata );
 
 		// Invoke
-		makepublic( this.state, "invokerAsync" );
+		makePublic( this.state, "invokerAsync" );
 		assertTrue( mockInterceptor.$never( "unittest" ) );
 		this.state.invokerAsync(
 			getMockRequestContext(),
@@ -158,7 +158,7 @@
 			"high",
 			mockBuffer
 		);
-		sleep( 5000 );
+		sleep( 500 );
 		assertTrue( mockInterceptor.$once( "unittest" ) );
 		// debug( cfthread );
 	}

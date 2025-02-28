@@ -9,7 +9,7 @@
 			// CacheBox Integration
 			cacheBox          : { enabled : true },
 			// Scope registration, automatically register a wirebox injector instance on any CF scope
-			scopeRegistration : { enabled : true },
+			scopeRegistration : { enabled : true, key : "wirebox_testing" },
 			// Package scan locations
 			scanLocations     : [ "coldbox.test-harness.models" ],
 			// Stop recursions
@@ -23,8 +23,6 @@
 
 		// map to constant value, no need for scope
 		map( "jsonProperty" ).toValue( "[{name:'luis'},{name:'Jose'}]" );
-		// map to ws
-		map( "coldboxWS" ).toWebservice( "http://localhost:8599/test-harness/remote/Echo.cfc?wsdl" );
 		// map to rss feed
 		map( "googleNews" )
 			.toRSS( "http://news.google.com/news?pz=1&cf=all&ned=us&hl=en&output=rss" )

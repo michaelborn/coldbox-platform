@@ -4,7 +4,13 @@ component {
 
 	function configure(){
 
-		task( "Scope Test" )
+		xtask( "Disabled Task" )
+			.call ( function(){
+				writeDump( var="Disabled", output="console" );
+			})
+			.every( 1, "second" );
+
+		task( name: "Scope Test", debug: true )
 			.call( function(){
 				writeDump( var="****************************************************************************", output="console" );
 				writeDump( var="Scope Test (application) -> #getThreadName()# #application.keyList()#", output="console" );
@@ -21,11 +27,11 @@ component {
 				writeDump( var='====> Scope test failed (#getThreadName()#)!! #exception.message# #exception.stacktrace.left( 500 )#', output="console" );
 			} );
 
-		task( "ProcessJobs" )
+		task( name: "ProcessJobs", debug: true )
 			.call( function(){
 				runEvent( "main.process" );
 			})
-			.every( 5, 'seconds' )
+			.every( 20, 'seconds' )
 			.delay( variables.delay, "seconds" )
 			.withNoOverlaps()
 			.onFailure( function( task, exception ){
@@ -35,7 +41,7 @@ component {
 				writeDump( var="====> process jobs success : Stats: #task.getStats().toString()#", output="console" );
 			} );
 
-		task( "testharness-Heartbeat" )
+		task( name: "testharness-Heartbeat", debug: true )
 			.call( function() {
 				if ( randRange(1, 5) eq 1 ){
 					throw( message = "I am throwing up randomly!", type="RandomThrowup" );
@@ -63,14 +69,14 @@ component {
 	 * Called before the scheduler is going to be shutdown
 	 */
 	function onShutdown(){
-		writeDump( var="Bye bye from the Global App Scheduler!", output="console" );
+		writeDump( var="[onShutdown] ==> Bye bye from the Global App Scheduler!", output="console" );
 	}
 
 	/**
 	 * Called after the scheduler has registered all schedules
 	 */
 	function onStartup(){
-		writeDump( var="The App Scheduler is in da house!!!!!", output="console" );
+		writeDump( var="[onStartup] ==> The App Scheduler is in da house!!!!!", output="console" );
 	}
 
 	/**
@@ -80,7 +86,7 @@ component {
 	 * @exception The ColdFusion exception object
 	 */
 	function onAnyTaskError( required task, required exception ){
-		writeDump( var="the #arguments.task.getname()# task just went kabooooooom!", output="console" );
+		writeDump( var="[onAnyTaskError] ==> #arguments.task.getname()# task just went kabooooooom!", output="console" );
 	}
 
 	/**
@@ -90,7 +96,7 @@ component {
 	 * @result The result (if any) that the task produced
 	 */
 	function onAnyTaskSuccess( required task, result ){
-		writeDump( var="the #arguments.task.getname()# task completed!", output="console" );
+		writeDump( var="[onAnyTaskSuccess] ==>  #arguments.task.getname()# task completed!", output="console" );
 	}
 
 	/**
@@ -99,7 +105,7 @@ component {
 	 * @task The task about to be executed
 	 */
 	function beforeAnyTask( required task ){
-		writeDump( var="I am running before the task: #arguments.task.getName()#", output="console" );
+		writeDump( var="[beforeAnyTask] ==> I am running before the task: #arguments.task.getName()#", output="console" );
 	}
 
 	/**
@@ -109,7 +115,7 @@ component {
 	 * @result The result (if any) that the task produced
 	 */
 	function afterAnyTask( required task, result ){
-		writeDump( var="I am running after the task: #arguments.task.getName()#", output="console" );
+		writeDump( var="[afterAnyTask] ==> I am running after the task: #arguments.task.getName()#", output="console" );
 	}
 
 }

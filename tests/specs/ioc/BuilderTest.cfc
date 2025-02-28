@@ -23,7 +23,8 @@
 			.$( "isCacheBoxLinked", true )
 			.setColdBox( mockColdbox )
 			.setLogBox( mockLogBox )
-			.setCacheBox( mockCacheBox );
+			.setCacheBox( mockCacheBox )
+			.setChildInjectors( {} );
 
 		builder  = createMock( "coldbox.system.ioc.Builder" ).init( mockInjector );
 		mockStub = createStub();
@@ -57,13 +58,6 @@
 		mapping = createMock( "coldbox.system.ioc.config.Mapping" ).init( "Buffer" );
 		mapping.setPath( "java.util.LinkedHashMap" );
 		r = builder.buildJavaClass( mapping );
-		// debug(r);
-	}
-
-	function testbuildWebservice() skip="isAdobe"{
-		mapping = createMock( "coldbox.system.ioc.config.Mapping" ).init( "Buffer" );
-		mapping.setPath( "http://localhost:8599/test-harness/remote/Echo.cfc?wsdl" );
-		r = builder.buildwebservice( mapping );
 		// debug(r);
 	}
 
@@ -159,9 +153,12 @@
 		}
 	}
 
-	function testbuildfeed(){
+	// TODO: ACTIVATE ONCE THE FEEDS MODULE IS BUILT
+	function testbuildfeed() skip="isBoxLang"{
 		var mapping = createMock( "coldbox.system.ioc.config.Mapping" ).init( "GoogleNews" );
-		mapping.setPath( "http://news.google.com/?output=rss" );
+		mapping.setPath(
+			"https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/section/world/rss.xml"
+		);
 		var r = builder.buildfeed( mapping );
 		// debug(r);
 		expect( r.metadata ).toBeStruct();
@@ -207,16 +204,17 @@
 		var mockLuis  = createStub();
 		var scopeInfo = { enabled : true, scope : "application", key : "wirebox" };
 		mockInjector
-			.$( "containsInstance", true )
 			.$( "getInstance", mockLuis )
 			.$( "getScopeRegistration", scopeInfo )
-			.setScopeStorage(
-				createEmptyMock( "coldbox.system.core.collections.ScopeStorage" )
-					.$( "exists", true )
-					.$( "get", mockInjector )
-			);
-
+			.$( "getName", "root" )
+		;
 		var p = builder.getProviderDSL( data );
+		p.setScopeStorage(
+			createEmptyMock( "coldbox.system.core.collections.ScopeStorage" )
+				.$( "exists", true )
+				.$( "get", mockInjector )
+		);
+
 		assertEquals( mockLuis, p.$get() );
 	}
 
@@ -291,7 +289,7 @@
 
 		// wirebox:populator
 		data      = { name : "luis", dsl : "wirebox:populator" };
-		populator = createEmptyMock( "coldbox.system.core.dynamic.BeanPopulator" );
+		populator = createEmptyMock( "coldbox.system.core.dynamic.ObjectPopulator" );
 		mockInjector.$( "getObjectPopulator", populator );
 		p = builder.getWireBoxDSL( definition: data, targetID: targetID );
 		assertEquals( populator, p );
@@ -347,25 +345,16 @@
 		mockLuis   = createStub();
 		mockTarget = createStub();
 		scopeInfo  = { enabled : true, scope : "application", key : "wirebox" };
-		mockInjector.$( "getInstance", mockLuis ).$( "containsInstance", true );
+		mockInjector.$( "getInstance", mockLuis ).$( "getName", "root" );
 		scopeStorage = createStub().$( "exists", true ).$( "get", mockInjector );
 
 		// inject mocks on target
-		mockTarget.$wbscopeInfo       = scopeInfo;
-		mockTarget.$wbScopeStorage    = scopeStorage;
+		mockTarget.$wbInjector        = mockInjector;
 		mockTarget.$wbProviders       = { buildProviderMixer : "luis" };
 		mockTarget.buildProviderMixer = builder.buildProviderMixer;
 
-		// 1. Via mapping first
 		p = mockTarget.buildProviderMixer();
 		assertEquals( "luis", mockInjector.$callLog().getInstance[ 1 ].name );
-		assertEquals( mockLuis, p );
-
-		// 2. Via DSL
-		mockInjector.$( "getInstance", mockLuis ).$( "containsInstance", false );
-		mockTarget.$wbProviders = { buildProviderMixer : "logbox:logger:{this}" };
-		p                       = mockTarget.buildProviderMixer();
-		assertEquals( "logbox:logger:{this}", mockInjector.$callLog().getInstance[ 1 ].dsl );
 		assertEquals( mockLuis, p );
 	}
 

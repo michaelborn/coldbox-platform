@@ -30,7 +30,7 @@ component extends="tests.resources.BaseIntegrationTest" {
 		feature( "WireBox Child Injectors", function(){
 			beforeEach( function( currentSpec ){
 				// Build out the global injector
-				injector = createMock( "coldbox.system.ioc.Injector" ).init(
+				variables.injector = createMock( "coldbox.system.ioc.Injector" ).init(
 					"tests.specs.ioc.config.samples.InjectorCreationTestsBinder"
 				);
 			} );
@@ -111,6 +111,21 @@ component extends="tests.resources.BaseIntegrationTest" {
 					then( "it should retrieve the instance from the child", function(){
 						var childSample = injector.getInstance( "ChildValue" );
 						expect( childSample ).toBe( "Luigi" );
+					} );
+				} );
+			} );
+
+			story( "I want to retrieve root injectors via DSL", function(){
+				beforeEach( function( currentSpec ){
+					var child = new coldbox.system.ioc.Injector(
+						"coldbox.tests.specs.ioc.config.samples.NoScopeBinder"
+					).setRoot( variables.injector );
+					injector.registerChildInjector( "myChild", child );
+				} );
+				given( "An object with a wirebox:root dsl", function(){
+					then( "it should build and inject a root injector", function(){
+						var childSample = injector.getInstance( "tests.resources.ChildInjectorSample" );
+						expect( childSample.getRoot().getName() ).toBe( "root" );
 					} );
 				} );
 			} );

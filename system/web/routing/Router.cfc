@@ -2,14 +2,44 @@
  * Copyright Since 2005 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
  * www.ortussolutions.com
  * ---
- * Manages all the routing definitions for the application and exposes the
- * ColdBox Routing DSL
+ * Manages all the routing definitions for the application and exposes the ColdBox Routing DSL
  */
 component
-	accessors="true"
-	extends  ="coldbox.system.FrameworkSupertype"
 	threadsafe
+	serializable="false"
+	accessors   ="true"
+	delegates   ="Async@coreDelegates,
+				Interceptor@cbDelegates,
+				Settings@cbDelegates,
+				Flow@coreDelegates,
+				Env@coreDelegates,
+				Population@cbDelegates,
+				Rendering@cbDelegates"
 {
+
+	/****************************************************************
+	 * DI *
+	 ****************************************************************/
+
+	property
+		name    ="cachebox"  
+		inject  ="cachebox"
+		delegate="getCache";
+	property
+		name    ="controller"
+		inject  ="coldbox" 
+		delegate="relocate,runEvent,runRoute";
+	property name="flash"  inject="coldbox:flash";
+	property name="logBox" inject="logbox";
+	property name="log"    inject="logbox:logger:{this}";
+	property
+		name    ="wirebox"
+		inject  ="wirebox"
+		delegate="getInstance";
+
+	/****************************************************************
+	 * Properties *
+	 ****************************************************************/
 
 	/**
 	 * The routing table
@@ -25,14 +55,6 @@ component
 	 * Namespace routing tables
 	 */
 	property name="namespaceRoutingTable" type="struct";
-
-	/**
-	 * Flag to enable unique or not URLs
-	 */
-	property
-		name   ="uniqueURLS"
-		type   ="boolean"
-		default="false";
 
 	/**
 	 * Flag to enable/disable routing
@@ -80,7 +102,7 @@ component
 	property name="baseURL" type="string";
 
 	/**
-	 * This flag denotes if full URL rewrites are enabled or not. Meaning if the `index.cfm` is in the path of the rewriter or not.
+	 * This flag denotes if full URL rewrites are enabled or not. Meaning if the `index` is in the path of the rewriter or not.
 	 * The default value is **false**.
 	 */
 	property
@@ -96,12 +118,6 @@ component
 		name   ="multiDomainDiscovery"
 		type   ="boolean"
 		default="true";
-
-
-	/**
-	 * ColdBox Controller
-	 */
-	property name="controller";
 
 	/**
 	 * Fluent route construct
@@ -120,19 +136,8 @@ component
 
 	/**
 	 * Constructor
-	 *
-	 * @controller        The ColdBox controller linkage
-	 * @controller.inject coldbox
 	 */
-	function init( required controller ){
-		// Setup Internal Work Objects
-		variables.controller = arguments.controller;
-		variables.wirebox    = arguments.controller.getWireBox();
-		variables.cachebox   = arguments.controller.getCacheBox();
-		variables.logBox     = arguments.controller.getLogBox();
-		variables.log        = variables.logBox.getLogger( this );
-		variables.flash      = arguments.controller.getRequestService().getFlashScope();
-
+	function init(){
 		/************************************** FLUENT CONSTRUCTS *********************************************/
 
 		// With closure
@@ -159,8 +164,6 @@ component
 		variables.namespaceRoutingTable   = {};
 		// Loose matching flag for regex matches
 		variables.looseMatching           = false;
-		// Flag to enable unique or not URLs
-		variables.uniqueURLs              = false;
 		// Enable the interceptor by default
 		variables.enabled                 = true;
 		// Detect extensions flag, so it can place a 'format' variable on the rc
@@ -191,14 +194,16 @@ component
 	 * This is ONLY called by the routing services and only ONCE in the Application Life-Cycle
 	 */
 	function startup(){
+		var frontController = findNoCase( ".bx", cgi.script_name ) ? "index.bxm" : "index.cfm";
+
 		// Verify baseUrl is still empty to default it for operation
 		if ( !len( variables.baseUrl ) ) {
 			variables.baseUrl = composeRoutingUrl();
 		}
 
-		// Check if rewrites turned off. If so, append the `index.cfm` to it.
-		if ( !variables.fullRewrites AND !findNoCase( "index.cfm", variables.baseURL ) ) {
-			variables.baseURL &= "/index.cfm";
+		// Check if rewrites turned off. If so, append the `index` to it.
+		if ( !variables.fullRewrites AND !findNoCase( frontController, variables.baseURL ) ) {
+			variables.baseURL &= "/#frontController#";
 		}
 
 		// Remove any double slashes: sometimes proxies can interfere
@@ -208,8 +213,8 @@ component
 		variables.controller
 			.setSetting( "SESBaseURL", variables.baseURL )
 			.setSetting( "SESBasePath", composeRoutingPath() )
-			.setSetting( "HTMLBaseURL", replaceNoCase( variables.baseURL, "index.cfm", "" ) )
-			.setSetting( "HTMLBasePath", replaceNoCase( composeRoutingPath(), "index.cfm", "" ) );
+			.setSetting( "HTMLBaseURL", replaceNoCase( variables.baseURL, frontController, "" ) )
+			.setSetting( "HTMLBasePath", replaceNoCase( composeRoutingPath(), frontController, "" ) );
 	}
 
 	/**
@@ -243,20 +248,14 @@ component
 	// DEPRECATED FUNCTIONALITY: Remove in later release
 
 	/**
-	 *
 	 * Includes a routes configuration file as an added import and returns itself after import
 	 *
-	 * @deprecated Please use the Routes.cfc approach instead
-	 * @location   The include location of the routes configuration template. Do not add '.cfm'
+	 * @deprecated Please use the Routes class approach instead
+	 * @location   The include location of the routes configuration template.
 	 *
 	 * @return Router
 	 */
 	function includeRoutes( required location ){
-		// verify .cfm or not
-		if ( listLast( arguments.location, "." ) NEQ "cfm" ) {
-			arguments.location &= ".cfm";
-		}
-
 		// We are ready to roll
 		try {
 			// Try to remove pathInfoProvider, just in case
@@ -275,44 +274,40 @@ component
 	}
 
 	/****************************************************************************************************************************/
-	// CF-11/2016 include .cfm template can't access the methods which are only declare as property... (hack) have to create setter/getter methods
-	// Remove this with new CFC approach. CFM files will have to upgrade to CFC capabilities once feature is complete.
-
-	function setBaseURL( string baseURL ){
-		variables.baseURL = arguments.baseURL;
-		return this;
-	}
-	function getBaseURL(){
-		return variables.baseURL;
-	}
-	function setUniqueURLS( boolean uniqueURLS ){
-		variables.uniqueURLS = arguments.uniqueURLS;
-		return this;
-	}
-	function getUniqueURLS(){
-		return variables.uniqueURLS;
-	}
-	function setValidExtensions( required extensions ){
-		variables.validExtensions = arguments.extensions;
-	}
-	function setFullRewrites( boolean target ){
-		variables.fullRewrites = arguments.target;
-		return this;
-	}
-	function getFullRewrites(){
-		return variables.fullRewrites;
-	}
-	function setMultiDomainDiscovery( boolean target ){
-		variables.multiDomainDiscovery = arguments.target;
-		return this;
-	}
-	function getMultiDomainDiscovery(){
-		return variables.multiDomainDiscovery;
-	}
-
-	/****************************************************************************************************************************/
 	/* 											ROUTING TABLE METHODS															*/
 	/****************************************************************************************************************************/
+
+	/**
+	 * This function tries to find a specifc route by incoming name.
+	 * If you need a route from a module then append the module address: `@moduleName` or prefix it like in run event calls `moduleName:routeName` in order to find the right route.
+	 *
+	 * @name The name of the route
+	 */
+	struct function findRouteByName( required name ){
+		var targetRoutes = variables.routes;
+		var routeName    = arguments.name;
+
+		// Module Routes Check
+		if ( find( "@", arguments.name ) ) {
+			var targetModule = getToken( arguments.name, 2, "@" );
+			targetRoutes     = getModuleRoutes( targetModule );
+			routeName        = getToken( arguments.name, 1, "@" );
+		}
+		if ( find( ":", arguments.name ) ) {
+			var targetModule = getToken( arguments.name, 1, ":" );
+			targetRoutes     = getModuleRoutes( targetModule );
+			routeName        = getToken( arguments.name, 2, ":" );
+		}
+
+		// Find the named route or return an empty struct
+		return foundRoute = targetRoutes
+			.filter( function( item ){
+				return ( arguments.item.name == routeName ? true : false );
+			} )
+			.reduce( function( results, item ){
+				return item;
+			}, {} );
+	}
 
 	/**
 	 * Register modules routes in the specified position in the main routing table, and returns itself
@@ -372,7 +367,7 @@ component
 					includeRoutes( location = mConfig[ module ].mapping & "/" & item );
 					// Remove pivot
 					variables.thisModule = "";
-				} else {
+				} else if ( !reFindNoCase( "\/?\:handler\/\:action", item.pattern ) ) {
 					item.module = module;
 					addRoute( argumentCollection = item );
 				}
@@ -660,42 +655,57 @@ component
 		// Default pattern or look at the incoming pattern sent?
 		var thisPattern = ( len( arguments.pattern ) ? arguments.pattern : "/#arguments.resource#" );
 
-		// Edit
+		// Edit Route: /:pattern/:id/edit
 		actionSet = filterRouteActions(
 			{ GET : "edit" },
 			arguments.only,
 			arguments.except
 		);
-
 		if ( !structIsEmpty( actionSet ) ) {
-			addRoute(
-				pattern  : "#thisPattern#/:#arguments.parameterName#/edit",
-				handler  : isNull( arguments.handler ) ? arguments.resource : arguments.handler,
-				action   : actionSet,
-				module   : arguments.module,
-				namespace: arguments.namespace,
-				meta     : arguments.meta
-			);
+			var routeArgs = {
+				pattern   : "#thisPattern#/:#arguments.parameterName#/edit",
+				name      : "#isNull( arguments.handler ) ? arguments.resource : arguments.handler#.edit",
+				handler   : isNull( arguments.handler ) ? arguments.resource : arguments.handler,
+				action    : actionSet,
+				module    : arguments.module,
+				namespace : arguments.namespace,
+				meta      : arguments.meta
+			};
+
+			// process a with closure if not empty
+			if ( !variables.withClosure.isEmpty() ) {
+				processWith( routeArgs );
+			}
+
+			addRoute( argumentCollection = routeArgs );
 		}
 
-		// New
+		// New Route: /:pattern/new
 		actionSet = filterRouteActions(
 			{ GET : "new" },
 			arguments.only,
 			arguments.except
 		);
 		if ( !structIsEmpty( actionSet ) ) {
-			addRoute(
-				pattern  : "#thisPattern#/new",
-				handler  : isNull( arguments.handler ) ? arguments.resource : arguments.handler,
-				action   : actionSet,
-				module   : arguments.module,
-				namespace: arguments.namespace,
-				meta     : arguments.meta
-			);
+			var routeArgs = {
+				pattern   : "#thisPattern#/new",
+				name      : "#isNull( arguments.handler ) ? arguments.resource : arguments.handler#.new",
+				handler   : isNull( arguments.handler ) ? arguments.resource : arguments.handler,
+				action    : actionSet,
+				module    : arguments.module,
+				namespace : arguments.namespace,
+				meta      : arguments.meta
+			};
+
+			// process a with closure if not empty
+			if ( !variables.withClosure.isEmpty() ) {
+				processWith( routeArgs );
+			}
+
+			addRoute( argumentCollection = routeArgs );
 		}
 
-		// Update, Delete, Show
+		// Update, Delete, Show Routes: /:pattern/:id
 		actionSet = filterRouteActions(
 			{
 				PUT    : "update",
@@ -707,14 +717,22 @@ component
 			arguments.except
 		);
 		if ( !structIsEmpty( actionSet ) ) {
-			addRoute(
-				pattern  : "#thisPattern#/:#arguments.parameterName#",
-				handler  : isNull( arguments.handler ) ? arguments.resource : arguments.handler,
-				action   : actionSet,
-				module   : arguments.module,
-				namespace: arguments.namespace,
-				meta     : arguments.meta
-			);
+			var routeArgs = {
+				pattern   : "#thisPattern#/:#arguments.parameterName#",
+				name      : "#isNull( arguments.handler ) ? arguments.resource : arguments.handler#.process",
+				handler   : isNull( arguments.handler ) ? arguments.resource : arguments.handler,
+				action    : actionSet,
+				module    : arguments.module,
+				namespace : arguments.namespace,
+				meta      : arguments.meta
+			};
+
+			// process a with closure if not empty
+			if ( !variables.withClosure.isEmpty() ) {
+				processWith( routeArgs );
+			}
+
+			addRoute( argumentCollection = routeArgs );
 		}
 
 		// Index + Create
@@ -724,14 +742,22 @@ component
 			arguments.except
 		);
 		if ( !structIsEmpty( actionSet ) ) {
-			addRoute(
-				pattern  : "#thisPattern#",
-				handler  : isNull( arguments.handler ) ? arguments.resource : arguments.handler,
-				action   : actionSet,
-				module   : arguments.module,
-				namespace: arguments.namespace,
-				meta     : arguments.meta
-			);
+			var routeArgs = {
+				pattern   : "#thisPattern#",
+				name      : "#isNull( arguments.handler ) ? arguments.resource : arguments.handler#",
+				handler   : isNull( arguments.handler ) ? arguments.resource : arguments.handler,
+				action    : actionSet,
+				module    : arguments.module,
+				namespace : arguments.namespace,
+				meta      : arguments.meta
+			};
+
+			// process a with closure if not empty
+			if ( !variables.withClosure.isEmpty() ) {
+				processWith( routeArgs );
+			}
+
+			addRoute( argumentCollection = routeArgs );
 		}
 
 		return this;
@@ -2028,6 +2054,7 @@ component
 	 * - full Url routing or front controller routing
 	 */
 	string function composeRoutingUrl(){
+		var headers = getHTTPRequestData( false ).headers;
 		return (
 			// Protocol
 			variables.controller
@@ -2035,7 +2062,11 @@ component
 				.getContext()
 				.isSSL() ? "https://" : "http://"
 		) &
-		CGI.HTTP_HOST & // multi-host
+		(
+			headers.keyExists( "x-forwarded-host" ) && len( headers[ "x-forwarded-host" ] ) ? headers[
+				"x-forwarded-host"
+			] : CGI.HTTP_HOST
+		) & // multi-host
 		composeRoutingPath(); // Routing Path
 	}
 
@@ -2043,8 +2074,9 @@ component
 	 * Composes the base routing path with no host or protocol
 	 */
 	string function composeRoutingPath(){
+		var base = findNoCase( ".bx", cgi.script_name ) ? "index.bxm" : "index.cfm";
 		return variables.controller.getSetting( "RoutingAppMapping" ) & // routing app mapping
-		( variables.fullRewrites ? "" : "index.cfm" ); // full or controller routing
+		( variables.fullRewrites ? "" : base ); // full or controller routing
 	}
 
 	/*****************************************************************************************/

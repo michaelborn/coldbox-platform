@@ -1,7 +1,10 @@
 ﻿/**
  * A utility object that provides runtime mixins
  */
-component {
+component accessors="true" {
+
+	// The mixins map to inject
+	property name="mixins";
 
 	/**
 	 * Constructor
@@ -33,7 +36,7 @@ component {
 		if ( !structKeyExists( arguments.target, "$wbMixer" ) ) {
 			structAppend( arguments.target, variables.mixins, true );
 		}
-		return this;
+		return arguments.target;
 	}
 
 	/**
@@ -45,7 +48,7 @@ component {
 		for ( var udf in variables.mixins ) {
 			structDelete( arguments.target, udf );
 		}
-		return this;
+		return arguments.target;
 	}
 
 	/****************** MIXINS ************************/
@@ -161,7 +164,16 @@ component {
 	 * Removes a method in a CFC
 	 */
 	function removePropertyMixin( required propertyName, scope = "variables" ){
-		structDelete( evaluate( arguments.scope ), arguments.propertyName );
+		switch ( arguments.scope ) {
+			case "variables":
+				return structDelete( variables, arguments.propertyName );
+				break;
+			case "this":
+				structDelete( this, arguments.propertyName );
+				break;
+			default:
+				throw( "Invalid scope" );
+		}
 		return this;
 	}
 
@@ -193,6 +205,30 @@ component {
 		} else {
 			return invoke( this, arguments.method );
 		}
+	}
+
+	/**
+	 * Utility function injected into target objects that expose delegation
+	 * It will allow ANY delegate method to do method delegation lookups
+	 *
+	 * @throws InvalidDelegateFunction - When a function that has not been delegated has been called
+	 */
+	function getByDelegate(){
+		var targetFunction = getFunctionCalledName();
+
+		if ( !this.$wbDelegateMap.keyExists( targetFunction ) ) {
+			throw(
+				message: "The requested delegate function (#targetFunction#) has not been registered",
+				type   : "InvalidDelegateFunction"
+			)
+		}
+
+		// Invoke delegation with argument collection
+		return invoke(
+			this.$wbDelegateMap[ targetFunction ].delegate,
+			this.$wbDelegateMap[ targetFunction ].method,
+			arguments
+		);
 	}
 
 }

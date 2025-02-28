@@ -100,14 +100,14 @@ component serializable="false" accessors="true" {
 		}
 
 		// Create Brand New Controller
-		application[ appKey ] = new coldbox.system.web.Controller( COLDBOX_APP_ROOT_PATH, appKey );
+		application[ appKey ] = new coldbox.system.web.Controller( variables.COLDBOX_APP_ROOT_PATH, appKey );
 		// Setup the Framework And Application
 		application[ appKey ]
 			.getLoaderService()
 			.loadApplication(
-				COLDBOX_CONFIG_FILE,
-				COLDBOX_APP_MAPPING,
-				COLDBOX_WEB_MAPPING
+				variables.COLDBOX_CONFIG_FILE,
+				variables.COLDBOX_APP_MAPPING,
+				variables.COLDBOX_WEB_MAPPING
 			);
 		// Get the reinit key
 		// Application Start Handler
@@ -161,7 +161,7 @@ component serializable="false" accessors="true" {
 							// process preReinit interceptors
 							application[ appKey ].getInterceptorService().announce( "preReinit" );
 							// Shutdown the application services
-							application[ appKey ].getLoaderService().processShutdown();
+							application[ appKey ].getLoaderService().processShutdown( force = true );
 						}
 						// Reload ColdBox
 						loadColdBox();
@@ -191,7 +191,7 @@ component serializable="false" accessors="true" {
 			// WireBox Singleton AutoReload
 			if ( cbController.getSetting( "Wirebox" ).singletonReload ) {
 				lock type="exclusive" name="#appHash#" timeout="#lockTimeout#" throwontimeout="true" {
-					cbController.getWireBox().clearSingletons();
+					cbController.getWireBox().clearAppSingletons();
 				}
 			}
 			// Handler's Index Auto Reload
@@ -215,9 +215,7 @@ component serializable="false" accessors="true" {
 	 */
 	function processColdBoxRequest() output="true"{
 		// Get Controller Reference
-		lock type="readonly" name="#variables.appHash#" timeout="#variables.lockTimeout#" throwontimeout="true" {
-			var cbController = application[ locateAppKey() ];
-		}
+		var cbController       = application[ locateAppKey() ];
 		// Local references
 		var interceptorService = cbController.getInterceptorService();
 		var cacheBox           = cbController.getCacheBox();
@@ -225,7 +223,7 @@ component serializable="false" accessors="true" {
 		try {
 			// set request time, for info purposes
 			request.fwExecTime = getTickCount();
-			// Load Module CF Mappings
+			// Load Module Mappings since dumb CFML engines can't keep state on this.
 			cbController.getModuleService().loadMappings();
 			// Create Request Context & Capture Request
 			var event = cbController.getRequestService().requestCapture();
@@ -264,6 +262,13 @@ component serializable="false" accessors="true" {
 				local.refResults.eventCaching.responseHeaders.each( function( key, value ){
 					event.setHTTPHeader( name = key, value = value );
 				} );
+
+				// Cached Status Code
+				if (
+					isNumeric( local.refResults.eventCaching.statusCode ) && local.refResults.eventCaching.statusCode > 0
+				) {
+					event.setHTTPHeader( statusCode = local.refResults.eventCaching.statusCode );
+				}
 
 				// Render Content as binary or just output
 				if ( local.refResults.eventCaching.isBinary ) {
@@ -308,7 +313,7 @@ component serializable="false" accessors="true" {
 						}
 						// ColdBox does native JSON if you return a complex object.
 						else {
-							renderedContent = serializeJSON( local.refResults.results, true );
+							renderedContent = cbController.getUtil().toJson( local.refResults.results );
 							getPageContextResponse().setContentType( "application/json" );
 						}
 					}
@@ -316,7 +321,7 @@ component serializable="false" accessors="true" {
 					else {
 						renderedContent = cbcontroller
 							.getRenderer()
-							.renderLayout(
+							.layout(
 								module     = event.getCurrentLayoutModule(),
 								viewModule = event.getCurrentViewModule()
 							);
@@ -342,49 +347,32 @@ component serializable="false" accessors="true" {
 							)
 						)
 					) {
-						lock
-							type                  ="exclusive"
-							name                  ="#variables.appHash#.caching.#eCacheEntry.cacheKey#"
-							timeout               ="#variables.lockTimeout#"
-							throwontimeout        ="true" {
-							// Try to discover the content type
-							var defaultContentType= "text/html";
-							// Discover from event caching first.
-							if ( !structIsEmpty( renderData ) ) {
-								defaultContentType = renderData.contentType;
-							} else {
-								// Else, ask the engine
-								defaultContentType = getPageContextResponse().getContentType();
-							}
+						// prepare storage entry
+						var cacheEntry = {
+							renderedContent : renderedContent,
+							renderData      : !renderData.isEmpty(),
+							contentType     : !isNull( renderData.contentType ) ? renderData.contentType : getPageContextResponse().getContentType(),
+							encoding        : "UTF-8",
+							statusCode      : getPageContextResponse().getStatus(),
+							statusText      : "",
+							isBinary        : false,
+							responseHeaders : event.getResponseHeaders()
+						};
 
-							// prepare storage entry
-							var cacheEntry = {
-								renderedContent : renderedContent,
-								renderData      : false,
-								contentType     : defaultContentType,
-								encoding        : "",
-								statusCode      : "",
-								statusText      : "",
-								isBinary        : false,
-								responseHeaders : event.getResponseHeaders()
-							};
-
-							// is this a render data entry? If So, append data
-							if ( !structIsEmpty( renderData ) ) {
-								cacheEntry.renderData = true;
-								structAppend( cacheEntry, renderData, true );
-							}
-
-							// Cache it
-							cacheBox
-								.getCache( eCacheEntry.provider )
-								.set(
-									eCacheEntry.cacheKey,
-									cacheEntry,
-									eCacheEntry.timeout,
-									eCacheEntry.lastAccessTimeout
-								);
+						// is this a render data entry? If So, append data
+						if ( !renderData.isEmpty() ) {
+							structAppend( cacheEntry, renderData, true );
 						}
+
+						// Cache it
+						cacheBox
+							.getCache( eCacheEntry.provider )
+							.set(
+								eCacheEntry.cacheKey,
+								cacheEntry,
+								eCacheEntry.timeout,
+								eCacheEntry.lastAccessTimeout
+							);
 					}
 					// end event caching
 
@@ -437,7 +425,6 @@ component serializable="false" accessors="true" {
 		// Time the request
 		request.fwExecTime = getTickCount() - request.fwExecTime;
 	}
-
 
 	/**
 	 * Verify if a reinit is sent
@@ -515,9 +502,11 @@ component serializable="false" accessors="true" {
 		reloadChecks();
 
 		// Process A ColdBox Request Only
-		if ( findNoCase( "index.cfm", listLast( arguments.targetPage, "/" ) ) ) {
+		// If the file is "index.(cfm|bxm)" then we will process it
+		if ( reFindNoCase( "index\.(cfm|bxm)", listLast( arguments.targetPage, "/" ) ) ) {
 			processColdBoxRequest();
 		}
+
 		return true;
 	}
 
@@ -526,9 +515,7 @@ component serializable="false" accessors="true" {
 	 */
 	boolean function onMissingTemplate( required template ){
 		// get reference
-		lock type="readonly" name="#variables.appHash#" timeout="#variables.lockTimeout#" throwontimeout="true" {
-			var cbController = application[ locateAppKey() ];
-		}
+		var cbController = application[ locateAppKey() ];
 		// Execute Missing Template Handler if it exists
 		if ( len( cbController.getSetting( "MissingTemplateHandler" ) ) ) {
 			// Save missing template in RC and right handler for this call.
@@ -539,8 +526,14 @@ component serializable="false" accessors="true" {
 					cbController.getSetting( "EventName" ),
 					cbController.getSetting( "MissingTemplateHandler" )
 				);
+
 			// Process it
-			onRequestStart( "index.cfm" );
+			if ( fileExists( cbController.locateFilePath( "index.bxm" ) ) ) {
+				onRequestStart( "index.bxm" );
+			} else {
+				onRequestStart( "index.cfm" );
+			}
+
 			// Return processed
 			return true;
 		}
@@ -553,9 +546,7 @@ component serializable="false" accessors="true" {
 	 */
 	function onSessionStart(){
 		// get reference
-		lock type="readonly" name="#variables.appHash#" timeout="#variables.lockTimeout#" throwontimeout="true" {
-			var cbController = application[ locateAppKey() ];
-		}
+		var cbController = application[ locateAppKey() ];
 		// Session start interceptors
 		cbController.getInterceptorService().announce( "sessionStart", session );
 		// Execute Session Start Handler
@@ -570,12 +561,9 @@ component serializable="false" accessors="true" {
 	function onSessionEnd( required struct sessionScope, struct appScope ){
 		var cbController = "";
 
-		// Get reference
-		lock type="readonly" name="#variables.appHash#" timeout="#variables.lockTimeout#" throwontimeout="true" {
-			// Check for cb Controller
-			if ( structKeyExists( arguments.appScope, locateAppKey() ) ) {
-				cbController = arguments.appScope.cbController;
-			}
+		// Check for cb Controller
+		if ( structKeyExists( arguments.appScope, locateAppKey() ) ) {
+			cbController = arguments.appScope[ locateAppKey() ];
 		}
 
 		if ( not isSimpleValue( cbController ) ) {
@@ -656,7 +644,7 @@ component serializable="false" accessors="true" {
 		event.setPrivateValue( "exception", oException );
 
 		// Set Exception Header
-		getPageContextResponse().setStatus( 500, "Internal Server Error" );
+		getPageContextResponse().setStatus( 500 );
 
 		// Run custom Exception handler if Found, else run default exception routines
 		if ( len( arguments.controller.getSetting( "ExceptionHandler" ) ) ) {
@@ -731,7 +719,7 @@ component serializable="false" accessors="true" {
 		required encoding
 	){
 		// Status Codes
-		getPageContextResponse().setStatus( arguments.statusCode, arguments.statusText );
+		getPageContextResponse().setStatus( arguments.statusCode );
 		// Render the Data Content Type
 		controller
 			.getDataMarshaller()
@@ -747,23 +735,20 @@ component serializable="false" accessors="true" {
 	 * Locate the application key
 	 */
 	private function locateAppKey(){
-		if ( len( trim( COLDBOX_APP_KEY ) ) ) {
-			return COLDBOX_APP_KEY;
+		if ( len( trim( variables.COLDBOX_APP_KEY ) ) ) {
+			return variables.COLDBOX_APP_KEY;
 		}
 		return "cbController";
 	}
 
 	/**
-	 * Helper method to deal with ACF2016's overload of the page context response, come on Adobe, get your act together!
-	 **/
+	 * Helper method to deal with ACF's overload of the page context response, come on Adobe, get your act together!
+	 */
 	private function getPageContextResponse(){
-		var response = getPageContext().getResponse();
-		try {
-			response.getStatus();
-			return response;
-		} catch ( any e ) {
-			return response.getResponse();
+		if ( server.keyExists( "coldfusion" ) && server.coldfusion.productName.findNoCase( "ColdFusion" ) ) {
+			return getPageContext().getResponse().getResponse();
 		}
+		return getPageContext().getResponse();
 	}
 
 }

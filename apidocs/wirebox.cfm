@@ -2,13 +2,18 @@
 <cfparam name="url.path" 	default="#expandPath( "./wirebox-APIDocs" )#">
 <cfscript>
 	docName = "wirebox-APIDocs";
-	base = expandPath( "/wirebox" );
+	base = expandPath( "/wirebox/system" );
+
+	// Create the output directory if it doesn't exist
+	if ( !directoryExists( url.path ) ) {
+		directoryCreate( url.path );
+	}
 
 	docbox 	= new docbox.DocBox( properties = {
 		projectTitle 	= "wirebox v#url.version#",
 		outputDir 		= url.path
 	} );
-	docbox.generate( source=base, mapping="wirebox" );
+	docbox.generate( source=base, mapping="wirebox.system" );
 </cfscript>
 
 <!---

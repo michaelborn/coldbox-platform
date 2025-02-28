@@ -18,6 +18,8 @@ logs/*
 
 # Build artifacts
 artifacts/*
+.artifacts/*
+.tmp/*
 apidocs/*-APIDocs
 build/build.number
 build-coldbox
@@ -27,7 +29,7 @@ build-coldbox
 testbox/*
 apidocs/testbox
 apidocs/docbox
-ApplicationTemplates/*
+system/async/cbproxies
 tests/suites/loadtests/logs
 test-harness/**/route-visualizer
 system/exceptions/node_modules/**
@@ -37,3 +39,4 @@ test-harness/config/runtime.properties.cfm
 .env
 /settings.xml
 /.settings/
+grapher/data/**

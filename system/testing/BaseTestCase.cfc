@@ -10,18 +10,22 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 * The application mapping this test links to
 	 */
 	property name="appMapping";
+
+	/**
+	 * The web mapping this test links to
+	 */
+	property name="webMapping";
+
 	/**
 	 * The configuration location this test links to
 	 */
 	property name="configMapping";
+
 	/**
 	 * The ColdBox controller this test links to
 	 */
 	property name="controller";
-	/**
-	 * The application key for the ColdBox applicatin this test links to
-	 */
-	property name="coldboxAppKey";
+
 	/**
 	 * If in integration mode, you can tag for your tests to be automatically autowired with dependencies
 	 * by WireBox
@@ -30,44 +34,44 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 		name   ="autowire"
 		type   ="boolean"
 		default="false";
+
 	/**
 	 * The test case metadata
 	 */
 	property name="metadata" type="struct";
 
 	// Public Switch Properties
-	// TODO: Remove by ColdBox 4.2+ and move to variables scope.
 	this.loadColdbox   = true;
-	this.unLoadColdBox = true;
+	this.unLoadColdBox = false;
 
 	// Internal Properties
 	variables.appMapping    = "";
+	variables.webMapping    = "";
 	variables.configMapping = "";
-	variables.controller    = "";
-	variables.coldboxAppKey = "cbController";
+	variables.controller    = application.keyExists( "cbController" ) ? application.cbController : "";
 	variables.autowire      = false;
 	variables.metadata      = {};
 
 	/********************************************* LIFE-CYCLE METHODS *********************************************/
 
 	/**
-	 * Inspect test case for annotations
+	 * Inspect test case for ColdBox loading annotations and autowiring
 	 *
 	 * @return BaseTestCase
 	 */
 	function metadataInspection(){
-		variables.metadata = new coldbox.system.core.util.Util().getInheritedMetadata( this );
+		variables.metadata = getUtil().getInheritedMetadata( this );
 		// Inspect for appMapping annotation
 		if ( structKeyExists( variables.metadata, "appMapping" ) ) {
 			variables.appMapping = variables.metadata.appMapping;
 		}
+		// Inspect for webMapping annotation
+		if ( structKeyExists( variables.metadata, "webMapping" ) ) {
+			variables.webMapping = variables.metadata.webMapping;
+		}
 		// Configuration File mapping
 		if ( structKeyExists( variables.metadata, "configMapping" ) ) {
 			variables.configMapping = variables.metadata.configMapping;
-		}
-		// ColdBox App Key
-		if ( structKeyExists( variables.metadata, "coldboxAppKey" ) ) {
-			variables.coldboxAppKey = variables.metadata.coldboxAppKey;
 		}
 		// Load coldBox annotation
 		if ( structKeyExists( variables.metadata, "loadColdbox" ) ) {
@@ -85,52 +89,30 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	}
 
 	/**
+	 * Get or construct a ColdBox Virtual Application
+	 */
+	function getColdBoxVirtualApp(){
+		if ( isNull( request.coldBoxVirtualApp ) ) {
+			request.coldBoxVirtualApp = new coldbox.system.testing.VirtualApp(
+				appMapping = variables.appMapping,
+				configPath = variables.configMapping,
+				webMapping = variables.webMapping
+			);
+		}
+		return request.coldBoxVirtualApp;
+	}
+
+	/**
 	 * The main setup method for running ColdBox Integration enabled tests
 	 */
 	function beforeTests(){
-		var appRootPath = "";
-		var context     = "";
-
 		// metadataInspection
 		metadataInspection();
 
 		// Load ColdBox Application for testing?
 		if ( this.loadColdbox ) {
-			// Check on Scope First
-			if ( structKeyExists( application, getColdboxAppKey() ) ) {
-				variables.controller = application[ getColdboxAppKey() ];
-			} else {
-				// Verify App Root Path
-				if ( NOT len( variables.appMapping ) ) {
-					variables.appMapping = "/";
-				}
-				appRootPath = expandPath( variables.appMapping );
-				// Clean the path for nice root path.
-				if ( NOT reFind( "(/|\\)$", appRootPath ) ) {
-					appRootPath = appRootPath & "/";
-				}
-				// Setup Coldbox configuration by convention
-				if ( NOT len( variables.configMapping ) ) {
-					if ( len( variables.appMapping ) ) {
-						variables.configMapping = variables.appMapping & ".config.Coldbox";
-					} else {
-						variables.configMapping = "config.Coldbox";
-					}
-				}
-				// Initialize mock Controller
-				variables.controller = new coldbox.system.testing.mock.web.MockController(
-					appRootPath = appRootPath,
-					appKey      = variables.coldboxAppKey
-				);
-				// persist for mock testing in right name
-				application[ getColdboxAppKey() ] = variables.controller;
-				// Setup
-				variables.controller
-					.getLoaderService()
-					.loadApplication( variables.configMapping, variables.appMapping );
-			}
-			// Load Module CF Mappings so modules can work properly
-			variables.controller.getModuleService().loadMappings();
+			// Startit up!
+			variables.controller = getColdBoxVirtualApp().startup();
 			// Auto registration of test as interceptor
 			variables.controller.getInterceptorService().registerInterceptor( interceptorObject = this );
 			// Do we need to autowire this test?
@@ -139,7 +121,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 			}
 		}
 
-		// Let's add Custom Matchers
+		// Let's add the ColdBox Custom Matchers
 		addMatchers( "coldbox.system.testing.CustomMatchers" );
 	}
 
@@ -149,15 +131,17 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	function setup(){
 		// Are we doing integration tests
 		if ( this.loadColdbox ) {
-			// verify ColdBox still exists, else load it again:
-			if ( !structKeyExists( application, getColdboxAppKey() ) ) {
+			if ( !getColdBoxVirtualApp().isRunning() ) {
 				beforeTests();
-			} else {
-				variables.controller = application[ getColdBoxAppKey() ];
 			}
 			// remove context + reset headers
 			variables.controller.getRequestService().removeContext();
-			getPageContextResponse().reset();
+
+			// Reset the buffer if not committed
+			if ( !getPageContextResponse().isCommitted() ) {
+				getPageContextResponse().reset();
+			}
+
 			structDelete( request, "_lastInvalidEvent" );
 		}
 	}
@@ -167,7 +151,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 */
 	function afterTests(){
 		if ( this.unLoadColdbox ) {
-			shutdownColdBox();
+			reset();
 		}
 	}
 
@@ -192,20 +176,6 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	}
 
 	/**
-	 * Gracefully shutdown ColdBox
-	 */
-	function shutdownColdBox(){
-		// Graceful shutdown
-		if ( structKeyExists( application, getColdboxAppKey() ) ) {
-			application[ getColdboxAppKey() ].getLoaderService().processShutdown();
-		}
-
-		// Wipe app scopes
-		structDelete( application, getColdboxAppKey() );
-		structDelete( application, "wirebox" );
-	}
-
-	/**
 	 * Reset the persistence of the unit test coldbox app, basically removes the controller from application scope
 	 *
 	 * @orm         Reload ORM or not
@@ -215,7 +185,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 */
 	function reset( boolean orm = false, boolean wipeRequest = true ){
 		// Shutdown gracefully ColdBox
-		shutdownColdBox();
+		getColdBoxVirtualApp().shutdown();
 
 		// Lucee Cleanups
 		if ( server.keyExists( "lucee" ) ) {
@@ -272,20 +242,16 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 
 		// Create functioning request context
 		mockRC         = getMockBox().createMock( "coldbox.system.web.context.RequestContext" );
-		mockController = createObject( "component", "coldbox.system.testing.mock.web.MockController" ).init(
-			"/unittest",
-			"unitTest"
-		);
+		mockController = !isSimpleValue( variables.controller ) ? prepareMock( variables.controller ) : getMockController();
 
 		// Create mock properties
-		rcProps.DefaultLayout     = "";
-		rcProps.DefaultView       = "";
-		rcProps.isSES             = false;
-		rcProps.sesBaseURL        = "";
+		rcProps.defaultLayout     = "";
+		rcProps.defaultView       = "";
+		rcProps.sesBaseURL        = "http://localhost";
 		rcProps.eventName         = "event";
-		rcProps.ViewLayouts       = structNew();
-		rcProps.FolderLayouts     = structNew();
-		rcProps.RegisteredLayouts = structNew();
+		rcProps.viewLayouts       = structNew();
+		rcProps.folderLayouts     = structNew();
+		rcProps.registeredLayouts = structNew();
 		rcProps.modules           = structNew();
 		mockRC.init( properties = rcProps, controller = mockController );
 
@@ -325,7 +291,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 * @return coldbox.system.ioc.Injector
 	 */
 	function getWireBox(){
-		return variables.controller.getwireBox();
+		return variables.controller.getWireBox();
 	}
 
 	/**
@@ -345,7 +311,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 * @return coldbox.system.cache.providers.ICacheProvider
 	 */
 	function getCache( required cacheName = "default" ){
-		return getController().getCache( arguments.cacheName );
+		return variables.controller.getCache( arguments.cacheName );
 	}
 
 	/**
@@ -363,7 +329,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 * @return coldbox.system.web.context.RequestContext
 	 */
 	function getRequestContext(){
-		return getController()
+		return variables.controller
 			.getRequestService()
 			.getContext( "coldbox.system.testing.mock.web.context.MockRequestContext" );
 	}
@@ -374,7 +340,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 * @return coldbox.system.web.Flash.AbstractFlashScope
 	 */
 	function getFlashScope(){
-		return getController().getRequestService().getFlashScope();
+		return variables.controller.getRequestService().getFlashScope();
 	}
 
 	/********************************************* APPLICATION EXECUTION METHODS *********************************************/
@@ -387,13 +353,12 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 * @return BaseTestCase
 	 */
 	function setupRequest( required event ){
-		var controller    = getController();
-		var eventName     = controller.getSetting( "eventName" );
+		var eventName     = variables.controller.getSetting( "eventName" );
 		// Setup the incoming event
 		URL[ eventName ]  = arguments.event;
 		FORM[ eventName ] = arguments.event;
 		// Capture the request
-		controller.getRequestService().requestCapture( arguments.event );
+		variables.controller.getRequestService().requestCapture( arguments.event );
 		return this;
 	}
 
@@ -447,7 +412,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 				.$args( "server_name", requestContext )
 				.$results( arguments.domain );
 
-			// If the route is for the home page, use the default event in the config/ColdBox.cfc
+			// If the route is for the home page, use the default event in the config/ColdBox
 			if ( arguments.route == "/" ) {
 				// Set the default app event
 				arguments.event = getController().getSetting( "defaultEvent" );
@@ -532,7 +497,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 					renderData = requestContext.getRenderData();
 					if ( isStruct( renderData ) and NOT structIsEmpty( renderData ) ) {
 						requestContext.setValue( "cbox_render_data", renderData );
-						requestContext.setValue( "cbox_statusCode", renderData.statusCode );
+						requestContext.setStatusCode( renderData.statusCode );
 						renderedContent = cbController
 							.getDataMarshaller()
 							.marshallData( argumentCollection = renderData );
@@ -541,19 +506,21 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 					else if ( !isNull( local.handlerResults ) ) {
 						// Store raw results
 						requestContext.setValue( "cbox_handler_results", handlerResults );
-						requestContext.setValue( "cbox_statusCode", getNativeStatusCode() );
 						if ( isSimpleValue( handlerResults ) ) {
 							renderedContent = handlerResults;
 						} else {
-							renderedContent = serializeJSON( handlerResults );
+							renderedContent = getUtil().toJson( handlerResults );
 						}
+					}
+					// Skip rendering if event.noRender is set
+					else if ( requestContext.getPrivateValue( "coldbox_norender", false ) ) {
+						renderedContent = "";
 					}
 					// render layout/view pair
 					else {
-						requestContext.setValue( "cbox_statusCode", getNativeStatusCode() );
 						renderedContent = cbcontroller
 							.getRenderer()
-							.renderLayout(
+							.layout(
 								module     = requestContext.getCurrentLayoutModule(),
 								viewModule = requestContext.getCurrentViewModule()
 							);
@@ -605,7 +572,6 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 		requestContext.getRenderedContent = variables.getRenderedContent;
 		requestContext.getHandlerResults  = variables.getHandlerResults;
 		requestContext.getRenderData      = variables.getRenderData;
-		requestContext.getStatusCode      = variables.getStatusCode;
 		return requestContext;
 	}
 
@@ -784,15 +750,6 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	}
 
 	/**
-	 * Get the status code for a ColdBox integration test
-	 *
-	 * @return cbox_statusCode or 200
-	 */
-	function getStatusCode(){
-		return getValue( "relocate_STATUSCODE", getValue( "cbox_statusCode", 200 ) );
-	}
-
-	/**
 	 * Get the status code set in the CFML engine.
 	 *
 	 * @return The CFML status code.
@@ -858,16 +815,6 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	}
 
 	/**
-	 * @deprecated
-	 */
-	function getModel(){
-		throw(
-			message = "getModel() is now fully deprecated in favor of getInstance().",
-			type    = "DeprecationException"
-		);
-	}
-
-	/**
 	 * Locates, Creates, Injects and Configures an object model instance
 	 *
 	 * @name          The mapping name or CFC instance path to try to build up
@@ -897,7 +844,22 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	 * @return coldbox.system.core.util.Util
 	 */
 	function getUtil(){
-		return new coldbox.system.core.util.Util();
+		if ( isNull( variables.cbUtil ) ) {
+			variables.cbUtil = new coldbox.system.core.util.Util();
+		}
+		return variables.cbUtil;
+	}
+
+	/**
+	 * Get the ColdBox Env Class
+	 *
+	 * @return coldbox.system.core.delegates.Env
+	 */
+	function getEnv(){
+		if ( isNull( variables.env ) ) {
+			variables.env = new coldbox.system.core.delegates.Env();
+		}
+		return variables.env;
 	}
 
 	/**
@@ -961,7 +923,7 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 		event.setPrivateValue( "exception", oException );
 
 		// Set Exception Header
-		getPageContextResponse().setStatus( 500, "Internal Server Error" );
+		event.setStatusCode( 500 );
 
 		// Run custom Exception handler if Found, else run default exception routines
 		if ( len( arguments.controller.getSetting( "ExceptionHandler" ) ) ) {
@@ -1020,14 +982,12 @@ component extends="testbox.system.compat.framework.TestCase" accessors="true" {
 	}
 
 	/**
-	 * Helper method to deal with ACF2016's overload of the page context response, come on Adobe, get your act together!
-	 **/
+	 * Helper method to deal with ACF's overload of the page context response, come on Adobe, get your act together!
+	 */
 	private function getPageContextResponse(){
-		if ( structKeyExists( server, "lucee" ) ) {
-			return getPageContext().getResponse();
-		} else {
-			return getPageContext().getResponse().getResponse();
-		}
+		return server.keyExists( "lucee" ) || server.keyExists( "boxlang" ) ? getPageContext().getResponse() : getPageContext()
+			.getResponse()
+			.getResponse();
 	}
 
 }

@@ -44,7 +44,7 @@ component extends="Executor" accessors="true" singleton {
 	){
 		// build out the java callable
 		var jCallable = createDynamicProxy(
-			new coldbox.system.async.proxies.Callable(
+			new coldbox.system.async.cbproxies.models.Callable(
 				supplier       = arguments.task,
 				method         = arguments.method,
 				debug          = variables.debug,
@@ -163,11 +163,13 @@ component extends="Executor" accessors="true" singleton {
 	 * Build out a new scheduled task representation. Calling this method does not mean that the task is executed.
 	 *
 	 * @name   The name of the task
+	 * @debug  Add debugging logs to System out, disabled by default
 	 * @task   The closure or cfc that represents the task (optional)
 	 * @method The method on the cfc to call, defaults to "run" (optional)
 	 */
 	ScheduledTask function newTask(
-		name = "task-#getName()#-#createUUID()#",
+		name  = "task-#getName()#-#createUUID()#",
+		debug = false,
 		task,
 		method = "run"
 	){
@@ -189,7 +191,7 @@ component extends="Executor" accessors="true" singleton {
 	 */
 	function buildJavaRunnable( required task, required method ){
 		return createDynamicProxy(
-			new coldbox.system.async.proxies.Runnable(
+			new coldbox.system.async.cbproxies.models.Runnable(
 				target         = arguments.task,
 				method         = arguments.method,
 				debug          = variables.debug,

@@ -43,6 +43,7 @@ component accessors="true" {
 		}
 		variables.extraMessage = arguments.extraMessage;
 		variables.extraInfo    = arguments.extraInfo;
+		variables.utility      = new coldbox.system.core.util.Util();
 
 		return this;
 	}
@@ -264,25 +265,25 @@ component accessors="true" {
 		// Prepare String Buffer
 		buffer = createObject( "java", "java.lang.StringBuilder" ).init( getExtraMessage() & chr( 13 ) );
 
-		if ( getType() neq "" ) {
-			buffer.append( "CFErrorType=" & getType() & chr( 13 ) );
+		if ( getType().len() ) {
+			buffer.append( "ErrorType = " & getType() & chr( 13 ) );
 		}
-		if ( getDetail() neq "" ) {
-			buffer.append( "CFDetails=" & getDetail() & chr( 13 ) );
+		if ( getDetail().len() ) {
+			buffer.append( "Details = " & getDetail() & chr( 13 ) );
 		}
-		if ( getMessage() neq "" ) {
-			buffer.append( "CFMessage=" & getMessage() & chr( 13 ) );
+		if ( getMessage().len() ) {
+			buffer.append( "Message = " & getMessage() & chr( 13 ) );
 		}
-		if ( getStackTrace() neq "" ) {
-			buffer.append( "CFStackTrace=" & getStackTrace() & chr( 13 ) );
+		if ( getStackTrace().len() ) {
+			buffer.append( "StackTrace = " & getStackTrace() & chr( 13 ) );
 		}
-		if ( getTagContextAsString() neq "" ) {
-			buffer.append( "CFTagContext=" & getTagContextAsString() & chr( 13 ) );
+		if ( getTagContextAsString().len() ) {
+			buffer.append( "TagContext = " & getTagContextAsString() & chr( 13 ) );
 		}
-		if ( isSimpleValue( getExtraInfo() ) ) {
-			buffer.append( "CFExtraInfo=" & getExtraInfo() & chr( 13 ) );
+		if ( isSimpleValue( getExtraInfo() ) && len( getExtraInfo() ) ) {
+			buffer.append( "ExtraInfo = " & getExtraInfo() & chr( 13 ) );
 		} else {
-			buffer.append( "CFExtraInfo=" & serializeJSON( getExtraInfo() ) & chr( 13 ) );
+			buffer.append( "ExtraInfo = " & variables.utility.toJson( getExtraInfo() ) & chr( 13 ) );
 		}
 		return buffer.toString();
 	}
@@ -390,6 +391,59 @@ component accessors="true" {
 					dateFormat( arguments.scope[ i ], "mm/dd/yyyy" ) & " " &
 					timeFormat( arguments.scope[ i ], "HH:mm:ss" ) & "</td>
 			"
+				);
+			} else if ( isSimpleValue( arguments.scope[ i ] ) && i == "SQL Sent" ) {
+				// Special highlighing for SQL
+				var exceptionMessage = "";
+				var lines            = 0;
+				try {
+					// Get error line from position in error details
+					exceptionMessage      = arguments.scope[ "Exception Detail" ];
+					var lineNumberResults = reFind(
+						"Position\: ([0-9]+)",
+						exceptionMessage,
+						0,
+						true,
+						"all"
+					);
+					if (
+						isArray( lineNumberResults )
+						&& arrayLen( lineNumberResults )
+						&& arrayLen( lineNumberResults[ 1 ].match ) == 2
+					) {
+						var lineBreaks = reFind(
+							"\n",
+							trim( left( arguments.scope[ i ], lineNumberResults[ 1 ].match[ 2 ] ) ),
+							0,
+							false,
+							"all"
+						);
+						lines = isArray( lineBreaks ) ? arrayLen( lineBreaks ) : 0;
+						lines++; // starts at 1 not 0
+						exceptionMessage &= " (line #lines#)"
+					}
+				} catch ( e any ) {
+				}
+
+				list.append( "<td class="" code-cell "" width="" 250 "">" & i & "</td>" );
+
+				list.append(
+					"<td class="" code-cell overflow-scroll ""><pre>"
+					& ( len( exceptionMessage ) ? exceptionMessage : "<em>---</em>" ) &
+					"</pre><pre  class=""brush:sql;gutter:false;highlight: #lines#"">
+			" & ( len( arguments.scope[ i ] ) ? arguments.scope[ i ] : "<em>---</em>" ) & "</pre></td>"
+				);
+			} else if (
+				isJSON( arguments.scope[ i ] ) && arrayFind( [ "{", "[" ], left( arguments.scope[ i ], 1 ) ) > 0
+			) {
+				// Special formatting for JSON Strings
+				list.append( "<td class="" code-cell "" width="" 250 "">" & i & "</td>" );
+
+				list.append(
+					"<td class="" code-cell overflow-scroll ""><pre class=""brush:js;gutter:false"">"
+					& (
+						len( arguments.scope[ i ] ) ? variables.utility.prettyJson( arguments.scope[ i ] ) : "<em>---</em>"
+					) & "</pre></td>"
 				);
 			} else if ( isSimpleValue( arguments.scope[ i ] ) ) {
 				list.append(

@@ -74,12 +74,13 @@ component accessors="true" {
 	 * @targetObject The target object we are building the DSL dependency for. If empty, means we are just requesting building
 	 */
 	private function getColdBoxDSL( required definition, targetObject ){
-		var thisName         = arguments.definition.name;
-		var thisType         = arguments.definition.dsl;
-		var thisTypeLen      = listLen( thisType, ":" );
-		var thisLocationType = "";
-		var thisLocationKey  = "";
-		var moduleSettings   = "";
+		var thisName          = arguments.definition.name;
+		var thisType          = arguments.definition.dsl;
+		var thisTypeLen       = listLen( thisType, ":" );
+		var thisLocationType  = "";
+		var thisLocationKey   = "";
+		var thisLocationToken = "";
+		var moduleSettings    = "";
 
 		// Support shortcut for specifying name in the definition instead of the DSl for supporting namespaces
 		if (
@@ -146,6 +147,9 @@ component accessors="true" {
 					case "requestService": {
 						return variables.coldbox.getRequestService();
 					}
+					case "rootWireBox": {
+						return variables.coldbox.getWireBox();
+					}
 					case "router": {
 						return variables.injector.getInstance( "router@coldbox" );
 					}
@@ -197,7 +201,12 @@ component accessors="true" {
 						return variables.coldbox.getSetting( thisLocationKey );
 					}
 					case "modulesettings": {
-						moduleSettings = variables.coldbox.getSetting( "modules" );
+						var moduleSettings = variables.coldbox.getSetting( "modules" );
+						// If {this} is used, try to discover the module from the injector name
+						if ( thisLocationKey == "{this}" ) {
+							thisLocationKey = variables.injector.getName().listFirst( "-" );
+						}
+						// Process
 						if ( structKeyExists( moduleSettings, thisLocationKey ) ) {
 							return moduleSettings[ thisLocationKey ].settings;
 						} else {
@@ -210,6 +219,11 @@ component accessors="true" {
 					}
 					case "moduleconfig": {
 						moduleSettings = variables.coldbox.getSetting( "modules" );
+						// If {this} is used, try to discover the module from the injector name
+						if ( thisLocationKey == "{this}" ) {
+							thisLocationKey = variables.injector.getName().listFirst( "-" );
+						}
+						// Process
 						if ( structKeyExists( moduleSettings, thisLocationKey ) ) {
 							return moduleSettings[ thisLocationKey ];
 						} else {
@@ -237,6 +251,12 @@ component accessors="true" {
 				thisLocationType  = getToken( thisType, 2, ":" );
 				thisLocationKey   = getToken( thisType, 3, ":" );
 				thisLocationToken = getToken( thisType, 4, ":" );
+
+				// If {this} is used, try to discover the module from the injector name
+				if ( thisLocationKey == "{this}" ) {
+					thisLocationKey = variables.injector.getName().listFirst( "-" );
+				}
+
 				switch ( thisLocationType ) {
 					case "modulesettings": {
 						moduleSettings = variables.coldbox.getSetting( "modules" );

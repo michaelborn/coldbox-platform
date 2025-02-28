@@ -43,6 +43,16 @@ component extends="tests.specs.async.BaseAsyncSpec" {
 				expect( t.disable().isDisabled() ).toBeTrue();
 			} );
 
+			it( "can run and set a last result with a value", function(){
+				var t = scheduler.task( "test" );
+				t.call( function(){
+					return "test";
+				} );
+				expect( t.getLastResult().isPresent() ).toBeFalse();
+				t.run( force: true );
+				expect( t.getLastResult().get() ).toBe( "test" );
+			} );
+
 			describe( "can have life cycle methods", function(){
 				it( "can call before", function(){
 					var t = scheduler
@@ -175,7 +185,8 @@ component extends="tests.specs.async.BaseAsyncSpec" {
 					var t = scheduler.task( "test" ).onFirstBusinessDayOfTheMonth( "09:00" );
 					expect( t.getPeriod() ).toBe( 86400 );
 					expect( t.getTimeUnit() ).toBe( "seconds" );
-					expect( t.getDayOfTheMonth() ).toBe( 1 );
+					expect( t.getTaskTime() ).toBe( "09:00" );
+					expect( t.getFirstBusinessDay() ).toBeTrue();
 				} );
 
 				it( "can register to fire onLastBusinessDayOfTheMonth()", function(){
@@ -251,9 +262,11 @@ component extends="tests.specs.async.BaseAsyncSpec" {
 					var t      = scheduler.task( "test" );
 					var target = t
 						.getJavaNow()
-						.plusDays( javacast( "int", 3 ) )
+						.plusDays( javacast( "long", 3 ) )
 						.getDayOfMonth();
 					t.setDayOfTheMonth( target );
+
+					var jNow = t.getJavaNow();
 					expect( t.isConstrained() ).toBeTrue( "Day is : #target#" );
 
 					var target = t.getJavaNow().getDayOfMonth();
@@ -262,23 +275,20 @@ component extends="tests.specs.async.BaseAsyncSpec" {
 				} );
 
 				it( "can have a last business day of the month constraint", function(){
-					var nowDate = new coldbox.system.async.time.ChronoUnit().toLocalDateTime( now(), "UTC" );
-
-					var t = prepareMock( scheduler.task( "test" ) ).setLastBusinessDay( true );
-
-					makePublic( t, "getLastDayOfTheMonth" );
+					var dateTimeHelper = prepareMock( new coldbox.system.async.time.DateTimeHelper() );
+					var mockNow        = dateTimeHelper.now();
+					var t              = prepareMock( scheduler.task( "test" ) ).setLastBusinessDay( true );
 
 					// If we are at the last day, increase it
-					if ( nowDate.getDayOfMonth() == t.getLastDayOfTheMonth().getDayOfMonth() ) {
-						nowDate = nowDate.plusDays( javacast( "int", -1 ) );
+					if ( mockNow.getDayOfMonth() == dateTimeHelper.getLastBusinessDayOfTheMonth().getDayOfMonth() ) {
+						mockNow = mockNow.plusDays( javacast( "long", -1 ) );
 					}
 
-					t.$( "getJavaNow", nowDate );
+					t.$( "getJavaNow", mockNow );
 					expect( t.isConstrained() ).toBeTrue();
 
-					var mockNow = t.getJavaNow();
-					prepareMock( t ).$( "getLastDayOfTheMonth", mockNow );
-
+					var lastDayOfTheMonth = DateTimeHelper.getLastBusinessDayOfTheMonth();
+					t.$( "getJavaNow", lastDayOfTheMonth );
 					expect( t.isConstrained() ).toBeFalse();
 				} );
 
@@ -346,6 +356,60 @@ component extends="tests.specs.async.BaseAsyncSpec" {
 					expect( t.isConstrained() ).toBeTrue(
 						"Weekend (#mockNow.getDayOfWeek().getvalue()#) should be constrained"
 					);
+				} );
+
+				story( "can restrict tasks via a start on constraint", function(){
+					given( "a valid start on constraint", function(){
+						then( "it should run the task", function(){
+							var targetDate = "01/01/2022";
+							var t          = scheduler
+								.task( "test" )
+								.everyDay()
+								.startOn( "01/01/2022", "09:00" );
+							expect( t.isConstrained() ).toBeFalse(
+								"Task should run as #now()# is after #targetDate#"
+							);
+						} );
+					} );
+					given( "an invalid start on constraint", function(){
+						then( "it should not allow the task to run yet", function(){
+							var targetDate = dateFormat( dateAdd( "d", 5, now() ), "yyyy-mm-dd" );
+							var t          = scheduler
+								.task( "test" )
+								.everyDay()
+								.startOn( targetDate );
+							expect( t.isConstrained() ).toBeTrue(
+								"Task should NOT run as #now()# is NOT after #targetDate#"
+							);
+						} );
+					} );
+				} );
+
+				story( "can restrict tasks via a end on constraint", function(){
+					given( "a valid end on constraint", function(){
+						then( "it should run the task", function(){
+							var targetDate = dateFormat( dateAdd( "d", 5, now() ), "yyyy-mm-dd" );
+							var t          = scheduler
+								.task( "test" )
+								.everyDay()
+								.endOn( targetDate, "09:00" );
+							expect( t.isConstrained() ).toBeFalse(
+								"Task should run as #now()# is before #targetDate#"
+							);
+						} );
+					} );
+					given( "an invalid end on constraint", function(){
+						then( "it should not allow the task to run yet", function(){
+							var targetDate = dateFormat( dateAdd( "d", -5, now() ), "yyyy-mm-dd" );
+							var t          = scheduler
+								.task( "test" )
+								.everyDay()
+								.endOn( targetDate );
+							expect( t.isConstrained() ).toBeTrue(
+								"Task should NOT run as #now()# is NOT before #targetDate#"
+							);
+						} );
+					} );
 				} );
 			} );
 		} );

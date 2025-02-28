@@ -1,6 +1,6 @@
 {
     "name":"ColdBox Platform",
-    "version":"6.7.0",
+    "version":"7.4.0",
     "location":"https://downloads.ortussolutions.com/ortussolutions/coldbox/@build.version@/coldbox-@build.version@.zip",
     "author":"Ortus Solutions <info@ortussolutions.com>",
     "slug":"coldbox",
@@ -38,30 +38,45 @@
             }
         ]
     },
+    "dependencies":{
+        "cbproxies":"^1"
+    },
     "devDependencies":{
-        "testbox":"be",
+        "testbox":"*",
         "commandbox-dotenv":"*",
         "commandbox-cfconfig":"*",
         "commandbox-cfformat":"*"
     },
-    "installPaths":{
-        "testbox":"testbox/"
-    },
     "scripts":{
         "release":"recipe build/release.boxr",
+        "tests":"task run build/Build.cfc runTests",
+        "tests:integration":"task run build/Build.cfc runTests integration",
+        "tests:mvc":"task run build/Build.cfc runTests mvc",
+        "tests:cachebox":"task run build/Build.cfc runTests cachebox",
+        "tests:logbox":"task run build/Build.cfc runTests logbox",
+        "tests:wirebox":"task run build/Build.cfc runTests wirebox",
+        "tests:core":"task run build/Build.cfc runTests core",
+        "tests:async":"task run build/Build.cfc runTests async",
+        "apidocs":"task run build/Build.cfc buildDocs",
+        "build":"task run build/Build.cfc run :docs=false",
         "format":"cfformat run system/**/*.cfc,tests/specs/**/*.cfc --overwrite",
         "format:watch":"cfformat watch system/**/*.cfc,tests/specs/**/*.cfc ./.cfformat.json",
-        "format:check":"cfformat check system/**/*.cfc,tests/specs/**/*.cfc",
+        "format:check":"cfformat check system/**/*.cfc,tests/specs/**/*.cfc ./.cfformat.json",
         "start:lucee":"server start serverConfigFile='server-lucee@5.json' --force",
-        "start:2016":"server start serverConfigFile='server-adobe@2016.json' --force",
-        "start:2018":"server start serverConfigFile='server-adobe@2018.json' --force",
+        "start:boxlang":"server start serverConfigFile='server-boxlang@1.json' --force",
         "start:2021":"server start serverConfigFile='server-adobe@2021.json' --force",
+        "start:2023":"server start serverConfigFile='server-adobe@2023.json' --force",
+        "stop:lucee":"server stop serverConfigFile='server-lucee@5.json' --force",
+        "stop:boxlang":"server stop serverConfigFile='server-boxlang@1.json' --force",
+        "stop:2021":"server stop serverConfigFile='server-adobe@2021.json' --force",
+        "stop:2023":"server stop serverConfigFile='server-adobe@2023.json' --force",
         "log:lucee":"server log coldbox-lucee@5 --follow",
-        "log:2016":"server log coldbox-adobe@2016 --follow",
-        "log:2018":"server log coldbox-adobe@2018 --follow",
+        "log:boxlang":"server log coldbox-boxlang@1 --follow",
         "log:2021":"server log coldbox-adobe@2021 --follow",
-        "cfpm":"echo '\".engine/acf2021/WEB-INF/cfusion/bin/cfpm.sh\"' | run",
-        "cfpm:install":"echo '\".engine/adobe2021/WEB-INF/cfusion/bin/cfpm.sh\" install ${1}' | run",
-        "install:2021":"run-script cfpm:install zip,orm,mysql,postgresql,sqlserver,document,feed,mail,debugger"
+        "log:2023":"server log coldbox-adobe@2023 --follow"
+    },
+    "installPaths":{
+        "testbox":"testbox/",
+        "cbproxies":"system/async/cbproxies/"
     }
 }

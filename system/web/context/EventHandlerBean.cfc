@@ -10,30 +10,37 @@ component accessors="true" {
 	 * Invocation path
 	 */
 	property name="invocationPath";
+
 	/**
 	 * The handler to execute
 	 */
 	property name="handler";
+
 	/**
 	 * The method to execute
 	 */
 	property name="method";
+
 	/**
 	 * The module assignment
 	 */
 	property name="module";
+
 	/**
 	 * Missing action method
 	 */
 	property name="missingAction";
+
 	/**
 	 * Private execution
 	 */
 	property name="isPrivate" type="boolean";
+
 	/**
 	 * View dispatching
 	 */
 	property name="viewDispatch" type="boolean";
+
 	/**
 	 * Action metadata
 	 */
@@ -105,6 +112,17 @@ component accessors="true" {
 	}
 
 	/************************************** UTILITY METHODS *********************************************/
+
+	/**
+	 * This verifies if a specific action has been tagged with an annotation.
+	 *
+	 * @key The annotation key to verify
+	 *
+	 * @return True if the action has been annotated with the key, else false.
+	 */
+	boolean function actionMetadataExists( required key ){
+		return variables.actionMetadata.keyExists( arguments.key );
+	}
 
 	/**
 	 * Return the full action metadata structure or filter by key and default value if needed

@@ -9,13 +9,16 @@ component{
 	this.sessionManagement  = true;
 	this.setClientCookies   = true;
 	this.clientManagement   = true;
-	this.sessionTimeout     = createTimeSpan( 0, 0, 10, 0 );
-	this.applicationTimeout = createTimeSpan( 0, 0, 10, 0 );
+	this.sessionTimeout     = createTimeSpan( 0, 1, 0, 0 );
+	this.applicationTimeout = createTimeSpan( 0, 1, 0, 0 );
 	this.timezone 			= "UTC";
 	this.enableNullSupport = shouldEnableFullNullSupport();
 
 	// Turn on/off white space management
 	this.whiteSpaceManagement = "smart";
+
+	// Turn on/off remote cfc content whitespace
+	this.suppressRemoteComponentContent = false;
 
 	// setup test path
 	this.mappings[ "/tests" ] = getDirectoryFromPath( getCurrentTemplatePath() );
@@ -34,9 +37,18 @@ component{
 	// Core Application.cfc mixins - ORM Settings, etc
 	include "../test-harness/config/ApplicationMixins.cfm";
 
+	//applicationstop();abort;
+
 	public boolean function onRequestStart( targetPage ){
 		// Set a high timeout for long running tests
 		setting requestTimeout="9999";
+		// New ColdBox Virtual Application Starter
+		request.coldBoxVirtualApp = new coldbox.system.testing.VirtualApp( appMapping = "/cbTestHarness" );
+
+		// If hitting the runner or specs, prep our virtual app and database
+		if ( getBaseTemplatePath().replace( expandPath( "/tests" ), "" ).reFindNoCase( "(runner|specs)" ) ) {
+			request.coldBoxVirtualApp.startup( true );
+		}
 
 		// ORM Reload for fresh results
 		if( structKeyExists( url, "fwreinit" ) ){
@@ -44,21 +56,14 @@ component{
 				pagePoolClear();
 			}
 			ormReload();
-			onRequestEnd( arguments.targetPage );
+			request.coldBoxVirtualApp.restart();
 		}
 
 		return true;
 	}
 
 	public void function onRequestEnd( required targetPage ) {
-
-		if( !isNull( application.cbController ) ){
-			application.cbController.getLoaderService().processShutdown();
-		}
-
-		structDelete( application, "cbController" );
-		structDelete( application, "wirebox" );
-
+		request.coldBoxVirtualApp.shutdown();
 	}
 
 	private boolean function shouldEnableFullNullSupport() {

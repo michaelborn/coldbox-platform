@@ -11,34 +11,37 @@ component accessors="true" {
 	 * Mapping Properties
 	 */
 
-	property name="name";
-	property name="alias" type="array";
-	property name="type";
-	property name="value";
-	property name="path";
-	property name="method";
-	property name="constructor";
-	property name="autoWire";
-	property name="autoInit" type="boolean";
-	property name="eagerInit";
-	property name="scope";
-	property name="dsl";
-	property name="cache" type="struct";
-	property name="DIConstructorArguments";
-	property name="DIProperties"      type="array";
-	property name="DISetters"         type="array";
-	property name="DIMethodArguments" type="array";
-	property name="onDIComplete"      type="array";
-	property name="discovered"        type="boolean";
-	property name="objectMetadata"    type="struct";
-	property name="providerMethods"   type="array";
+	property name="alias"             type="array";
 	property name="aspect"            type="boolean";
 	property name="aspectAutoBinding" type="boolean";
-	property name="virtualInheritance";
+	property name="autoInit"          type="boolean";
+	property name="autoWire";
+	property name="cache" type="struct";
+	property name="constructor";
+	property name="delegates";
+	property name="DIConstructorArguments";
+	property name="DIMethodArguments" type="array";
+	property name="DIProperties"      type="array";
+	property name="discovered"        type="boolean";
+	property name="DISetters"         type="array";
+	property name="dsl";
+	property name="eagerInit";
 	property name="extraAttributes" type="struct";
-	property name="mixins"          type="array";
-	property name="threadSafe";
 	property name="influenceClosure";
+	property name="method";
+	property name="mixins" type="array";
+	property name="name";
+	property name="objectMetadata" type="struct";
+	property name="onDIComplete"   type="array";
+	property name="path";
+	property name="providerMethods" type="array";
+	property name="scope";
+	property name="threadSafe";
+	property name="type";
+	property name="value";
+	property name="virtualInheritance";
+	property name="lazyProperties";
+	property name="observedProperties";
 
 	/**
 	 * Constructor
@@ -107,8 +110,55 @@ component accessors="true" {
 		variables.threadSafe             = "";
 		// A closure that can influence the creation of the mapping
 		variables.influenceClosure       = "";
+		// Delegates syntax
+		variables.delegates              = "";
+		// Lazy Properties
+		variables.lazyProperties         = [];
+		// Observed Properties
+		variables.observedProperties     = [];
+
+		// Core Delegation Exclusions
+		variables.CORE_DELEGATE_EXCLUSIONS = [
+			"init",
+			"$init",
+			"onDIComplete",
+			"setInjector",
+			"setBeanFactory",
+			"setColdBox",
+			"$wbAOPInvokeProxy",
+			"$wbAOPInclude",
+			"$wbAOPMixed",
+			"$wbAOPRemove",
+			"$wbAOPStoreJointPoint",
+			"$wbAOPTargetMapping",
+			"$wbAOPTargets",
+			"$wbBinder",
+			"$wbDelegateMap",
+			"$wbInjector",
+			"$wbLazyProperties",
+			"$wbMixer",
+			"$wbObservedProperties",
+			"$wbProviders",
+			"removeMixin",
+			"injectMixin",
+			"invokerMixin",
+			"injectPropertyMixin",
+			"removePropertyMixin",
+			"includeitMixin",
+			"getPropertyMixin",
+			"exposeMixin",
+			"methodProxy",
+			"getVariablesMixin"
+		];
 
 		return this;
+	}
+
+	/**
+	 * Verify if this is a transient object
+	 */
+	boolean function isTransient(){
+		return getScope() == "noscope";
 	}
 
 	/**
@@ -250,6 +300,13 @@ component accessors="true" {
 	}
 
 	/**
+	 * Do we have any delegates declared explicitly
+	 */
+	boolean function hasDelegates(){
+		return variables.delegates.len();
+	}
+
+	/**
 	 * Set the cache properties for this mapping
 	 *
 	 * @key               Cache key to use
@@ -352,16 +409,21 @@ component accessors="true" {
 	}
 
 	/**
-	 * Add a new property di definition
+	 * Add a new property injection definition
 	 *
-	 * @name     The name of the property to inject
-	 * @ref      The reference mapping id this property maps to
-	 * @dsl      The construction dsl this property references. If used, the name value must be used.
-	 * @value    The explicit value of the property, if passed.
-	 * @javaCast The type of javaCast() to use on the value of the value. Only used if using dsl or ref arguments
-	 * @scope    The scope in the CFC to inject the property to. By default it will inject it to the variables scope
-	 * @required If the property is required or not, by default we assume required DI
-	 * @type     The type of the property
+	 * @name             The name of the property to inject
+	 * @ref              The reference mapping id this property maps to
+	 * @dsl              The construction dsl this property references. If used, the name value must be used.
+	 * @value            The explicit value of the property, if passed.
+	 * @javaCast         The type of javaCast() to use on the value of the value. Only used if using dsl or ref arguments
+	 * @scope            The scope in the CFC to inject the property to. By default it will inject it to the variables scope
+	 * @required         If the property is required or not, by default we assume required DI
+	 * @type             The type of the property
+	 * @delegate         If the property is an object delegate
+	 * @delegatePrefix   If the property has a delegate prefix
+	 * @delegateSuffix   If the property has a delegate suffix
+	 * @delegateExcludes If the property has a delegate exclusion list
+	 * @delegateIncludes If the property has a delegate inclusion list
 	 */
 	Mapping function addDIProperty(
 		required name,
@@ -370,19 +432,32 @@ component accessors="true" {
 		value,
 		javaCast,
 		scope            = "variables",
-		required required=true,
-		type             = "any"
+		boolean required = true,
+		type             = "any",
+		boolean delegate = false,
+		delegatePrefix   = "",
+		delegateSuffix   = "",
+		delegateExcludes = [],
+		delegateIncludes = []
 	){
 		// check if already registered, if it is, just return
-		for ( var x = 1; x lte arrayLen( variables.DIProperties ); x++ ) {
-			if ( variables.DIProperties[ x ].name eq arguments.name ) {
+		for ( var thisProperty in variables.DIProperties ) {
+			if ( thisProperty.name eq arguments.name ) {
 				return this;
 			}
 		}
 
-		var definition = getNewDIDefinition();
-		structAppend( definition, arguments, true );
-		arrayAppend( variables.DIProperties, definition );
+		// Add core delegation exclusions
+		if ( arguments.delegate ) {
+			arrayAppend(
+				arguments.delegateExcludes,
+				variables.CORE_DELEGATE_EXCLUSIONS,
+				true
+			);
+		}
+
+		// store it
+		arrayAppend( variables.DIProperties, getNewDIDefinition().append( arguments, true ) );
 
 		return this;
 	}
@@ -502,16 +577,16 @@ component accessors="true" {
 
 			// Processing only done for CFC's,rest just mark and return
 			if ( variables.type neq arguments.binder.TYPES.CFC ) {
-				if ( NOT len( variables.scope ) ) {
+				if ( !len( variables.scope ) ) {
 					variables.scope = "noscope";
 				}
-				if ( NOT len( variables.autowire ) ) {
+				if ( !len( variables.autowire ) ) {
 					variables.autowire = true;
 				}
-				if ( NOT len( variables.eagerInit ) ) {
+				if ( !len( variables.eagerInit ) ) {
 					variables.eagerInit = false;
 				}
-				if ( NOT len( variables.threadSafe ) ) {
+				if ( !len( variables.threadSafe ) ) {
 					variables.threadSafe = false;
 				}
 				// finished processing mark as discovered
@@ -545,17 +620,17 @@ component accessors="true" {
 			variables.objectMetadata = md;
 
 			// Process persistence if not set already by configuration as it takes precedence
-			if ( NOT len( variables.scope ) ) {
+			if ( !len( variables.scope ) ) {
 				// Singleton Processing
 				if ( structKeyExists( md, "singleton" ) ) {
 					variables.scope = arguments.binder.SCOPES.SINGLETON;
 				}
 				// Registered Scope Processing
-				else if ( structKeyExists( md, "scope" ) ) {
+				if ( structKeyExists( md, "scope" ) ) {
 					variables.scope = md.scope;
 				}
 				// CacheBox scope processing if cachebox annotation found, or cache annotation found
-				else if (
+				if (
 					structKeyExists( md, "cacheBox" ) OR (
 						structKeyExists( md, "cache" ) AND isBoolean( md.cache ) AND md.cache
 					)
@@ -563,7 +638,7 @@ component accessors="true" {
 					variables.scope = arguments.binder.SCOPES.CACHEBOX;
 				}
 				// check if scope found? If so, then set it to no scope.
-				else {
+				else if ( !len( variables.scope ) ) {
 					variables.scope = "noscope";
 				}
 			}
@@ -572,11 +647,11 @@ component accessors="true" {
 			// Cachebox Persistence Processing
 			if ( variables.scope EQ arguments.binder.SCOPES.CACHEBOX ) {
 				// Check if we already have a key, maybe added via configuration
-				if ( NOT len( variables.cache.key ) ) {
+				if ( !len( variables.cache.key ) ) {
 					variables.cache.key = "wirebox-#variables.name#";
 				}
 				// Check the default provider now to see if set by configuration
-				if ( NOT len( variables.cache.provider ) ) {
+				if ( !len( variables.cache.provider ) ) {
 					// default it first
 					variables.cache.provider = "default";
 					// Now check the annotations for the provider
@@ -585,14 +660,14 @@ component accessors="true" {
 					}
 				}
 				// Check if timeouts set by configuration or discovery
-				if ( NOT len( variables.cache.timeout ) ) {
+				if ( !len( variables.cache.timeout ) ) {
 					// Discovery by annocations
 					if ( structKeyExists( md, "cachetimeout" ) AND isNumeric( md.cacheTimeout ) ) {
 						variables.cache.timeout = md.cacheTimeout;
 					}
 				}
 				// Check if lastAccessTimeout set by configuration or discovery
-				if ( NOT len( variables.cache.lastAccessTimeout ) ) {
+				if ( !len( variables.cache.lastAccessTimeout ) ) {
 					// Discovery by annocations
 					if ( structKeyExists( md, "cacheLastAccessTimeout" ) AND isNumeric( md.cacheLastAccessTimeout ) ) {
 						variables.cache.lastAccessTimeout = md.cacheLastAccessTimeout;
@@ -612,7 +687,7 @@ component accessors="true" {
 			}
 
 			// eagerInit annotation only if not overridden
-			if ( NOT len( variables.eagerInit ) ) {
+			if ( !len( variables.eagerInit ) ) {
 				if ( structKeyExists( md, "eagerInit" ) ) {
 					variables.eagerInit = true;
 				} else {
@@ -622,7 +697,7 @@ component accessors="true" {
 			}
 
 			// threadSafe wiring annotation
-			if ( NOT len( variables.threadSafe ) ) {
+			if ( !len( variables.threadSafe ) ) {
 				if ( structKeyExists( md, "threadSafe" ) AND NOT len( md.threadSafe ) ) {
 					variables.threadSafe = true;
 				} else if ( structKeyExists( md, "threadSafe" ) AND len( md.threadSafe ) AND isBoolean( md.threadSafe ) ) {
@@ -640,8 +715,16 @@ component accessors="true" {
 				}
 			}
 
+			// Delegates by Metadata and by Explicit Definition
+			if ( md.keyExists( "delegates" ) && len( md.delegates.trim() ) ) {
+				processComponentDelegates( md.delegates.trim() );
+			}
+			if ( hasDelegates() ) {
+				processComponentDelegates( variables.delegates );
+			}
+
 			// autowire only if not overridden
-			if ( NOT len( variables.autowire ) ) {
+			if ( !len( variables.autowire ) ) {
 				// Check if autowire annotation found or autowire already set
 				if ( structKeyExists( md, "autowire" ) and isBoolean( md.autowire ) ) {
 					variables.autoWire = md.autowire;
@@ -682,6 +765,66 @@ component accessors="true" {
 		// End lock
 
 		return this;
+	}
+
+	/**
+	 * Process all the component delegates using WireBox delegate syntax expression
+	 *
+	 * @expression The CFC delegates annotation string expression
+	 */
+	private function processComponentDelegates( required expression ){
+		arguments.expression
+			.listToArray()
+			// Parse the delegate expression into a struct of raw data
+			.map( function( item ){
+				arguments.item = arguments.item.trim();
+				var model      = reReplaceNoCase(
+					arguments.item.getToken( 1, "=" ), // remove only methods if any
+					"^(.*)(>|<)",
+					"",
+					"all"
+				);
+				return {
+					"name"             : "wbDelegate_#listLast( model, "." ).replace( "@", "_" )#_#hash( arguments.item )#",
+					"ref"              : model,
+					"delegate"         : true,
+					"delegateIncludes" : getToken( arguments.item, 2, "=" ).listToArray(),
+					"raw"              : arguments.item
+				};
+			} )
+			// Map Prefixes
+			.map( function( item ){
+				if ( reFind( "^>", arguments.item.raw ) ) {
+					arguments.item.delegatePrefix = arguments.item.ref;
+				} else if ( reFind( "^(.*)(>)", arguments.item.raw ) ) {
+					arguments.item.delegatePrefix = getToken( arguments.item.raw, 1, ">" );
+				}
+				return arguments.item;
+			} )
+			// Map Suffixes
+			.map( function( item ){
+				if ( reFind( "^<", arguments.item.raw ) ) {
+					arguments.item.delegateSuffix = arguments.item.ref;
+				} else if ( reFind( "^(.*)(<)", arguments.item.raw ) ) {
+					arguments.item.delegateSuffix = getToken( arguments.item.raw, 1, "<" )
+				}
+				return arguments.item;
+			} )
+			.each( function( item ){
+				addDIProperty( argumentCollection = arguments.item );
+			} );
+	}
+
+	/**
+	 * Get the component annotation metadata by key
+	 *
+	 * @key          The annotation to look for in the component
+	 * @defaultValue Default value to return if not found
+	 *
+	 * @return any
+	 */
+	function getComponentAnnotation( required key, defaultValue = "" ){
+		return variables.objectMetadata.keyExists( arguments.key ) ? variables.objectMetadata[ arguments.key ] : arguments.defaultValue;
 	}
 
 	/**
@@ -815,6 +958,123 @@ component accessors="true" {
 	}
 
 	/**
+	 * Process a property metadata for use in WireBox
+	 *
+	 * @property The property metadata to process
+	 */
+	private function processPropertyMetadata( required metadata ){
+		// Injection / Delegation Definition
+		if ( arguments.metadata.keyExists( "inject" ) ) {
+			addDIProperty(
+				name          : arguments.metadata.name,
+				dsl           : ( len( arguments.metadata.inject ) ? arguments.metadata.inject : "model" ),
+				scope         : ( arguments.metadata.keyExists( "scope" ) ? arguments.metadata.scope : "variables" ),
+				required      : ( arguments.metadata.keyExists( "required" ) ? arguments.metadata.required : true ),
+				type          : ( arguments.metadata.keyExists( "type" ) ? arguments.metadata.type : "any" ),
+				delegate      : arguments.metadata.keyExists( "delegate" ),
+				delegatePrefix: (
+					// Verify it exists, if it does and no length then use the property name by convention
+					arguments.metadata.keyExists( "delegatePrefix" ) ? (
+						len( arguments.metadata.delegatePrefix ) ? arguments.metadata.delegatePrefix : arguments.metadata.name
+					)
+					 : ""
+				),
+				delegateSuffix: (
+					// Verify it exists, if it does and no length then use the property name by convention
+					arguments.metadata.keyExists( "delegateSuffix" ) ? (
+						len( arguments.metadata.delegateSuffix ) ? arguments.metadata.delegateSuffix : arguments.metadata.name
+					)
+					 : ""
+				),
+				delegateExcludes: (
+					arguments.metadata.keyExists( "delegateExcludes" ) ? arguments.metadata.delegateExcludes.listToArray() : []
+				),
+				delegateIncludes: arguments.metadata.keyExists( "delegate" ) ? arguments.metadata.delegate.listToArray() : []
+			);
+		}
+		// end injection processing
+
+		// Lazy processes
+		var isLazy         = arguments.metadata.keyExists( "lazy" );
+		var isLazyUnlocked = arguments.metadata.keyExists( "lazyNoLock" )
+		if ( isLazy || isLazyUnlocked ) {
+			// Detect Builder Name
+			var builderName = "";
+			if ( isLazy && len( arguments.metadata.lazy ) ) {
+				builderName &= arguments.metadata.lazy;
+			} else if ( isLazyUnlocked && len( arguments.metadata.lazyNoLock ) ) {
+				builderName &= arguments.metadata.lazyNoLock;
+			} else {
+				// By convention build{propertyName}
+				builderName &= "build#arguments.metadata.name#";
+			}
+			// Register it
+			variables.lazyProperties.append( {
+				"name"    : arguments.metadata.name,
+				"builder" : builderName,
+				"useLock" : isLazyUnlocked ? false : true
+			} );
+		}
+
+		// Observer Properties
+		if ( arguments.metadata.keyExists( "observed" ) ) {
+			// Register it
+			variables.observedProperties.append( {
+				"name"     : arguments.metadata.name,
+				"observer" : len( arguments.metadata.observed ) ? arguments.metadata.observed : "#arguments.metadata.name#Observer"
+			} );
+		}
+	}
+
+	/**
+	 * Process a function's metadata for DI Injection
+	 *
+	 * @metadata The Function metadata to process
+	 */
+	function processFunctionMetadata( required metadata ){
+		// Constructor Processing if found
+		if ( arguments.metadata.name eq variables.constructor ) {
+			// Process parameters for constructor injection
+			for ( var thisParam in arguments.metadata.parameters ) {
+				// Check injection annotation, if not found then no injection
+				if ( structKeyExists( thisParam, "inject" ) ) {
+					// ADD Constructor argument
+					addDIConstructorArgument(
+						name    : thisParam.name,
+						dsl     : ( len( thisParam.inject ) ? thisParam.inject : "model" ),
+						required: ( structKeyExists( thisParam, "required" ) ? thisParam.required : false ),
+						type    : ( structKeyExists( thisParam, "type" ) ? thisParam.type : "any" )
+					);
+				}
+			}
+			// add constructor to found list, so it is processed only once in recursions
+			dependencies[ arguments.metadata.name ] = "constructor";
+		}
+
+		// Setter discovery, MUST be inject annotation marked to be processed.
+		if ( left( arguments.metadata.name, 3 ) eq "set" AND structKeyExists( arguments.metadata, "inject" ) ) {
+			// Add to setter to mappings and recursion lookup
+			addDISetter(
+				name: right( arguments.metadata.name, len( arguments.metadata.name ) - 3 ),
+				dsl : ( len( arguments.metadata.inject ) ? arguments.metadata.inject : "model" )
+			);
+			dependencies[ arguments.metadata.name ] = "setter";
+		}
+
+		// Provider Methods Discovery
+		if ( structKeyExists( arguments.metadata, "provider" ) AND len( arguments.metadata.provider ) ) {
+			addProviderMethod( arguments.metadata.name, arguments.metadata.provider );
+			dependencies[ arguments.metadata.name ] = "provider";
+		}
+
+		// onDIComplete Method Discovery
+		if ( structKeyExists( arguments.metadata, "onDIComplete" ) ) {
+			arrayAppend( variables.onDIComplete, arguments.metadata.name );
+			dependencies[ arguments.metadata.name ] = "onDIComplete";
+		}
+	}
+
+	/**
 	 * Process methods/properties for dependency injection
 	 *
 	 * @binder       The binder requesting the processing
@@ -828,81 +1088,28 @@ component accessors="true" {
 		required metadata,
 		dependencies = {}
 	){
-		// Shortcut
-		var md = arguments.metadata;
-
 		// Look For properties for annotation injections and register them with the mapping
-		param md.properties = [];
-		md.properties
-			// Only process injectable properties
+		param arguments.metadata.properties = [];
+		arguments.metadata.properties
+			// Only process wirebox properties
 			.filter( function( thisProperty ){
-				return structKeyExists( arguments.thisProperty, "inject" );
+				return arguments.thisProperty.keyExists( "inject" ) ||
+				arguments.thisProperty.keyExists( "lazyNoLock" ) ||
+				arguments.thisProperty.keyExists( "observed" ) ||
+				( arguments.thisProperty.keyExists( "lazy" ) && !arguments.thisProperty.keyExists( "fieldType" ) )
 			} )
 			// Process each property
-			.each( function( thisProperty ){
-				addDIProperty(
-					name : arguments.thisProperty.name,
-					dsl  : ( len( arguments.thisProperty.inject ) ? arguments.thisProperty.inject : "model" ),
-					scope: (
-						structKeyExists( arguments.thisProperty, "scope" ) ? arguments.thisProperty.scope : "variables"
-					),
-					required: (
-						structKeyExists( arguments.thisProperty, "required" ) ? arguments.thisProperty.required : true
-					),
-					type: ( structKeyExists( arguments.thisProperty, "type" ) ? arguments.thisProperty.type : "any" )
-				);
-			} );
+			.each( processPropertyMetadata );
 
 		// Look For functions for setter injections and more and register them with the mapping
-		param md.functions = [];
-		md.functions
+		param arguments.metadata.functions = [];
+		arguments.metadata.functions
 			// Verify Processing or do we continue to next iteration for processing
 			// This is to avoid overriding by parent trees in inheritance chains
 			.filter( function( thisFunction ){
 				return !structKeyExists( dependencies, thisFunction.name );
 			} )
-			.each( function( thisFunction ){
-				// Constructor Processing if found
-				if ( thisFunction.name eq variables.constructor ) {
-					// Process parameters for constructor injection
-					for ( var thisParam in thisFunction.parameters ) {
-						// Check injection annotation, if not found then no injection
-						if ( structKeyExists( thisParam, "inject" ) ) {
-							// ADD Constructor argument
-							addDIConstructorArgument(
-								name    : thisParam.name,
-								dsl     : ( len( thisParam.inject ) ? thisParam.inject : "model" ),
-								required: ( structKeyExists( thisParam, "required" ) ? thisParam.required : false ),
-								type    : ( structKeyExists( thisParam, "type" ) ? thisParam.type : "any" )
-							);
-						}
-					}
-					// add constructor to found list, so it is processed only once in recursions
-					dependencies[ thisFunction.name ] = "constructor";
-				}
-
-				// Setter discovery, MUST be inject annotation marked to be processed.
-				if ( left( thisFunction.name, 3 ) eq "set" AND structKeyExists( thisFunction, "inject" ) ) {
-					// Add to setter to mappings and recursion lookup
-					addDISetter(
-						name: right( thisFunction.name, len( thisFunction.name ) - 3 ),
-						dsl : ( len( thisFunction.inject ) ? thisFunction.inject : "model" )
-					);
-					dependencies[ thisFunction.name ] = "setter";
-				}
-
-				// Provider Methods Discovery
-				if ( structKeyExists( thisFunction, "provider" ) AND len( thisFunction.provider ) ) {
-					addProviderMethod( thisFunction.name, thisFunction.provider );
-					dependencies[ thisFunction.name ] = "provider";
-				}
-
-				// onDIComplete Method Discovery
-				if ( structKeyExists( thisFunction, "onDIComplete" ) ) {
-					arrayAppend( variables.onDIComplete, thisFunction.name );
-					dependencies[ thisFunction.name ] = "onDIComplete";
-				}
-			} ); // End function processing
+			.each( processFunctionMetadata );
 
 		return this;
 	}
@@ -912,15 +1119,20 @@ component accessors="true" {
 	 */
 	private struct function getNewDIDefinition(){
 		return {
-			"name"     : "",
-			"value"    : javacast( "null", "" ),
-			"dsl"      : javacast( "null", "" ),
-			"scope"    : "variables",
-			"javaCast" : javacast( "null", "" ),
-			"ref"      : javacast( "null", "" ),
-			"required" : false,
-			"argName"  : "",
-			"type"     : "any"
+			"name"             : "",
+			"value"            : javacast( "null", "" ),
+			"dsl"              : javacast( "null", "" ),
+			"scope"            : "variables",
+			"javaCast"         : javacast( "null", "" ),
+			"ref"              : javacast( "null", "" ),
+			"required"         : false,
+			"argName"          : "",
+			"type"             : "any",
+			"delegate"         : false,
+			"delegatePrefix"   : "",
+			"delegateSuffix"   : "",
+			"delegateExcludes" : [],
+			"delegateIncludes" : []
 		};
 	}
 

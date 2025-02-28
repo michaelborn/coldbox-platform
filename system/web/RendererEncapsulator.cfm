@@ -19,11 +19,15 @@
 		}
 	}
 
+	// Incorporate viewVariables into the variables scope
+	variables.append( attributes.viewVariables );
+
 	// Localize context
 	variables.event = attributes.event;
 	variables.rc 	= attributes.rc;
 	variables.prc 	= attributes.prc;
 	variables.args  = attributes.args;
+	variables.this  = variables;
 
 	// Spoof the arguments scope for backwards compat.  i.e. arguments.args, arguments.view
 	variables.arguments = {
@@ -51,5 +55,5 @@
 	}
 
 	// Include the actual view requested
-	include "#arguments.viewPath#.cfm";
+	include "#arguments.viewPath#";
 </cfscript>

@@ -7,9 +7,8 @@
 		injector = createMock( "coldbox.system.ioc.Injector" ).init(
 			"coldbox.tests.specs.ioc.config.samples.InjectorCreationTestsBinder"
 		);
-		application.wirebox = injector;
 		// mock logger
-		mockLogger          = createEmptyMock( "coldbox.system.logging.Logger" )
+		mockLogger = createEmptyMock( "coldbox.system.logging.Logger" )
 			.$( "canDebug", true )
 			.$( "debug" )
 			.$( "error" );
@@ -21,7 +20,7 @@
 
 	function teardown(){
 		super.teardown();
-		structDelete( application, "wirebox" );
+		structDelete( application, "wirebox_testing" );
 	}
 
 	function testMixins(){
@@ -137,19 +136,6 @@
 	function testConstant(){
 		prop = injector.getInstance( "jsonProperty" );
 		assertTrue( len( prop ) );
-	}
-
-	function testWebService() skip="isAdobe"{
-		ws = injector.getInstance( "coldboxWS" );
-
-		//
-		if ( listFindNoCase( "Lucee", server.coldfusion.productname ) ) {
-			expect( getMetadata( ws ).name ).toMatch( "rpc" );
-		}
-		// adobe
-		else {
-			expect( getMetadata( ws ).name ).toMatch( "ServiceProxy" );
-		}
 	}
 
 	function testDSL(){

@@ -10,6 +10,7 @@
 			reinitPassword          : "",
 			reinitKey 				: "fwreinit",
 			handlersIndexAutoReload : true,
+			debugMode : true,
 			// Implicit Events
 			defaultEvent            : "",
 			requestStartHandler     : "main.onRequestStart",
@@ -90,7 +91,7 @@
 			},
 			// Root Logger
 			root : { levelmax : "INFO", appenders : "*" }
-			// ,debug = [ "coldbox.system" ]
+			//,debug = [ "coldbox.system.ioc.Injector" ]
 		};
 
 		// You can now register executors for your application
@@ -143,5 +144,8 @@
 	}
 
 	function development(){
+		wirebox = {
+			singletonReload : true
+		}
 	}
 }
